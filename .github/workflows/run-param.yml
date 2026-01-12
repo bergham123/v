@@ -1,4 +1,4 @@
-name: Run with Parameter
+name: Run Scraper with Parameter
 
 concurrency:
   group: main-workflow-group
@@ -21,34 +21,55 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install beautifulsoup4 playwright
+          playwright install chromium
+
       - name: Read Counter
         id: read_count
         run: |
           if [ ! -f counter.json ]; then echo "count=0" >> $GITHUB_OUTPUT; exit 1; fi
           COUNT=$(node -p "require('./counter.json').count")
           echo "current_count=$COUNT" >> $GITHUB_OUTPUT
+          echo "Current limit remaining: $COUNT"
 
       - name: Check Limit
         run: |
           if [ ${{ steps.read_count.outputs.current_count }} -le 0 ]; then
-            echo "Limit reached."
+            echo "Limit reached. Stopping workflow."
             exit 1
           fi
 
-      - name: Run Your Script
+      # ----------------- RUN PYTHON SCRIPT -----------------
+      - name: Run Python Scraper
         run: |
-          echo "Running parameter: ${{ github.event.inputs.api_param }}"
-          # PLACE YOUR CODE HERE
+          # Pass the input parameter to the script
+          python scraper.py "${{ github.event.inputs.api_param }}"
+      # ----------------------------------------------------
 
       - name: Decrement Counter
         run: |
           NEW_COUNT=$(node -p "require('./counter.json').count - 1")
           echo "{ \"count\": $NEW_COUNT }" > counter.json
 
-      - name: Commit Changes
+      - name: Commit Changes (Counter + Data)
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Add the counter file
           git add counter.json
-          git commit -m "Update counter [skip ci]"
+          
+          # Add the new data folder if it exists
+          git add data/
+          
+          # Commit and push
+          git commit -m "Update scraper results and counter [skip ci]"
           git push
