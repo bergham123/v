@@ -3,20 +3,25 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Workflow Launcher</title>
+    <title>Workflow Runner</title>
     <style>
-        body { font-family: sans-serif; padding: 50px; text-align: center; }
+        body { font-family: sans-serif; padding: 50px; text-align: center; background-color: #f9f9f9; }
         
-        /* Input Styles */
+        /* Container */
+        .container { max-width: 500px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+
+        /* Counter Display */
+        .counter-box { margin-bottom: 30px; font-size: 18px; color: #333; }
+        .counter-number { font-size: 32px; font-weight: bold; color: #0070f3; }
+
+        /* Form Styles */
         input { 
             padding: 10px; 
             font-size: 16px; 
-            width: 300px; 
+            width: 70%; 
             border: 1px solid #ccc; 
             border-radius: 5px;
         }
-        
-        /* Button Styles */
         button { 
             padding: 10px 20px; 
             font-size: 16px; 
@@ -25,7 +30,7 @@
             color: white; 
             border: none; 
             border-radius: 5px; 
-            margin-left: 10px;
+            width: 25%;
         }
         button:hover { background-color: #0056b3; }
         button:disabled { background-color: #ccc; cursor: not-allowed; }
@@ -35,6 +40,7 @@
             margin-top: 20px;
             font-weight: bold;
             min-height: 24px;
+            font-size: 14px;
         }
         .success { color: green; }
         .error { color: red; }
@@ -43,44 +49,79 @@
 </head>
 <body>
 
-    <h1>Workflow Runner</h1>
-    
-    <!-- We use a Form to handle the submit action -->
-    <form id="workflowForm">
-        <input type="text" id="apiParam" name="api" placeholder="Enter text..." required>
-        <button type="submit" id="runBtn">Run Workflow</button>
-    </form>
+    <div class="container">
+        <h1>Workflow Runner</h1>
 
-    <!-- Messages appear here -->
-    <div id="message-area"></div>
+        <!-- Display Counter Here -->
+        <div class="counter-box">
+            Remaining Runs: <span id="countDisplay" class="counter-number">Loading...</span>
+        </div>
+
+        <!-- Form -->
+        <form id="workflowForm">
+            <input type="text" id="apiParam" name="api" placeholder="Enter text..." required>
+            <button type="submit" id="runBtn">Run</button>
+        </form>
+
+        <!-- Status Message -->
+        <div id="message-area"></div>
+    </div>
 
     <script>
         const form = document.getElementById('workflowForm');
         const messageArea = document.getElementById('message-area');
         const btn = document.getElementById('runBtn');
         const input = document.getElementById('apiParam');
+        const countDisplay = document.getElementById('countDisplay');
 
+        // --- UPDATED: Uses your new internal Vercel API ---
+        const COUNTER_URL = "/api/counter"; 
+
+        // 1. Function to fetch and update the counter
+        async function fetchCounter() {
+            try {
+                const response = await fetch(COUNTER_URL);
+                const data = await response.json();
+                
+                countDisplay.innerText = data.count;
+                
+                // Visual check: if 0, turn red
+                if (data.count <= 0) {
+                    countDisplay.style.color = "red";
+                } else {
+                    countDisplay.style.color = "#0070f3";
+                }
+            } catch (error) {
+                countDisplay.innerText = "Error";
+                console.error("Could not load counter:", error);
+            }
+        }
+
+        // 2. Load the counter immediately
+        window.onload = fetchCounter;
+
+        // 3. Handle Form Submit
         form.addEventListener('submit', async function(event) {
-            // 1. Stop the browser from redirecting/reloading
-            event.preventDefault();
-
+            event.preventDefault(); 
             const text = input.value;
             if (!text) return;
 
-            // 2. Show "Sending..." state
             messageArea.innerText = "Sending request...";
             messageArea.className = "loading";
-            btn.disabled = true; // Disable button while waiting
+            btn.disabled = true;
 
             try {
-                // 3. Send the request silently
+                // Send request to Vercel API
                 const response = await fetch(`/api/run-workflow?api=${encodeURIComponent(text)}`);
                 const data = await response.json();
 
-                // 4. Show Result
                 if (response.ok) {
                     messageArea.innerText = `✅ Success: ${data.message}`;
                     messageArea.className = "success";
+
+                    // Refresh counter after 5 seconds (Gives GitHub time to save)
+                    setTimeout(fetchCounter, 5000);
+
                 } else {
                     messageArea.innerText = `❌ Failed: ${data.error}`;
                     messageArea.className = "error";
@@ -90,7 +131,6 @@
                 messageArea.innerText = `❌ Network Error: ${error.message}`;
                 messageArea.className = "error";
             } finally {
-                // 5. Re-enable button
                 btn.disabled = false;
             }
         });
