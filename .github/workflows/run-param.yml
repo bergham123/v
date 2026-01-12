@@ -1,57 +1,75 @@
-name: Run Google Scraper
+name: Run Scraper with Parameter
+
+concurrency:
+  group: main-workflow-group
+  cancel-in-progress: false
 
 on:
   workflow_dispatch:
     inputs:
-      query:
-        description: 'Search query'
+      api_param:
+        description: 'Parameter from Vercel'
         required: true
-        type: string
+
+permissions:
+  contents: write
 
 jobs:
-  scrape:
+  run:
     runs-on: ubuntu-latest
-    
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-      
-      - name: Setup Python
+
+      - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-      
+
       - name: Install dependencies
         run: |
-          pip install playwright beautifulsoup4
-          python -m playwright install chromium
-      
-      - name: Create data directory
-        run: mkdir -p data
-      
-      - name: Run scraper
+          python -m pip install --upgrade pip
+          pip install beautifulsoup4 playwright
+          playwright install chromium
+
+      - name: Read Counter
+        id: read_count
         run: |
-          python scraper.py "${{ github.event.inputs.query }}"
-      
-      - name: List results
+          if [ ! -f counter.json ]; then echo "count=0" >> $GITHUB_OUTPUT; exit 1; fi
+          COUNT=$(node -p "require('./counter.json').count")
+          echo "current_count=$COUNT" >> $GITHUB_OUTPUT
+          echo "Current limit remaining: $COUNT"
+
+      - name: Check Limit
         run: |
-          echo "=== Results ==="
-          if [ -d "data" ]; then
-            ls -la data/
-            echo "=== File contents ==="
-            for file in data/*.json; do
-              echo "File: $file"
-              cat "$file"
-            done
-          else
-            echo "No data directory"
+          if [ ${{ steps.read_count.outputs.current_count }} -le 0 ]; then
+            echo "Limit reached. Stopping workflow."
+            exit 1
           fi
-      
-      - name: Commit and push results
-        if: success()
+
+      # ----------------- RUN PYTHON SCRIPT -----------------
+      - name: Run Python Scraper
         run: |
-          git config --global user.name "github-actions"
-          git config --global user.email "github-actions@github.com"
+          # Pass the input parameter to the script
+          python scraper.py "${{ github.event.inputs.api_param }}"
+      # ----------------------------------------------------
+
+      - name: Decrement Counter
+        run: |
+          NEW_COUNT=$(node -p "require('./counter.json').count - 1")
+          echo "{ \"count\": $NEW_COUNT }" > counter.json
+
+      - name: Commit Changes (Counter + Data)
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Add the counter file
+          git add counter.json
+          
+          # Add the new data folder if it exists
           git add data/
-          git commit -m "Add scraped data for '${{ github.event.inputs.query }}'" || echo "No changes to commit"
+          
+          # Commit and push
+          git commit -m "Update scraper results and counter [skip ci]"
           git push
