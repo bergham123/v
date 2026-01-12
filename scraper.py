@@ -11,6 +11,7 @@ from bs4 import BeautifulSoup
 # --- Configuration ---
 DATA_DIR = "data"
 os.makedirs(DATA_DIR, exist_ok=True)
+MAX_PAGES = 5  # We will fetch exactly 5 pages
 
 # Regex for phone numbers
 PHONE_REGEX = re.compile(r'(0\d[\s\-]?\d{2}[\s\-]?\d{2}[\s\-]?\d{2}[\s\-]?\d{2})')
@@ -20,43 +21,52 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(mes
 logger = logging.getLogger(__name__)
 
 def scrape_google(query):
-    """Scrape Google search results for a query."""
+    """Scrape Google search results for a query (Fixed 5 pages)."""
     results = []
-    start = 0
-    page_num = 1
     
-    # URL Template (Fixed pagination bug)
+    # URL Template
     BASE_URL = "https://www.google.com/search?q={q}&udm=1&start={start}"
     
+    # Fake User-Agent to look like a real Chrome browser (Helps avoid blocking)
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+
     try:
         logger.info(f"Starting scrape for query: {query}")
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             page = browser.new_page()
+            page.set_extra_http_headers(headers)
             page.set_default_timeout(60000)
 
-            while True:
-                # Construct URL
+            # --- FIXED LOOP: Run exactly 5 times ---
+            for page_num in range(1, MAX_PAGES + 1):
+                # Calculate start (Page 1 = 0, Page 2 = 10, etc.)
+                start = (page_num - 1) * 10
+                
                 current_url = BASE_URL.format(q=query, start=start)
-                logger.info(f"Scraping page {page_num} -> {current_url}")
+                logger.info(f"Scraping page {page_num}/{MAX_PAGES} -> {current_url}")
 
                 page.goto(current_url)
                 page.wait_for_timeout(4000) 
 
+                # Check for Google Block
+                title = page.title().lower()
+                if "unusual traffic" in title or "check you're not a robot" in title:
+                    logger.error("⚠️ Google blocked this IP. Stopping early.")
+                    break
+
                 html = page.content()
                 soup = BeautifulSoup(html, "html.parser")
 
-                # 1. Check for Google Block
-                title = page.title().lower()
-                if "unusual traffic" in title or "check you're not a robot" in title:
-                    logger.error("⚠️ Google blocked this IP (Unusual Traffic).")
-                    break
-
-                # 2. Select Items
+                # Select Items
                 items = soup.select("div.w7Dbne")
+                
                 if not items:
-                    logger.info("No items found on page. Stopping.")
-                    break
+                    logger.info(f"Page {page_num} returned no items (or selectors changed).")
+                    # We DO NOT stop. We just continue to next page as you requested.
+                    continue 
 
                 current_page_results = 0
 
@@ -68,7 +78,6 @@ def scrape_google(query):
                     name = name_tag.get_text(strip=True)
                     phone = None
                     
-                    # Search for phone in divs
                     for div in item.find_all("div"):
                         text = div.get_text(" ", strip=True)
                         match = PHONE_REGEX.search(text)
@@ -86,20 +95,12 @@ def scrape_google(query):
                             current_page_results += 1
                             logger.info(f"Found: {name} - {phone}")
 
-                if current_page_results == 0:
-                    logger.info("No new unique results on this page. Stopping.")
-                    break
-
-                page_num += 1
-                start += 10
+                logger.info(f"Finished page {page_num}. Added {current_page_results} new results.")
                 time.sleep(2)
 
     except Exception as e:
         logger.exception("Error during scraping")
     
-    # --- NO FINALLY BLOCK HERE ---
-    # The 'with sync_playwright()' handles closing the browser automatically.
-
     # Save JSON
     safe_name = re.sub(r'[^a-z0-9\-]+', '-', query.lower())
     now = datetime.now().strftime("%Y-%m-%d-%H-%M")
