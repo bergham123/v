@@ -6,27 +6,95 @@
     <title>Workflow Launcher</title>
     <style>
         body { font-family: sans-serif; padding: 50px; text-align: center; }
-        form { display: flex; justify-content: center; gap: 10px; }
-        input { padding: 10px; font-size: 16px; width: 300px; }
-        button { padding: 10px 20px; font-size: 16px; cursor: pointer; background-color: #0070f3; color: white; border: none; border-radius: 5px; }
+        
+        /* Input Styles */
+        input { 
+            padding: 10px; 
+            font-size: 16px; 
+            width: 300px; 
+            border: 1px solid #ccc; 
+            border-radius: 5px;
+        }
+        
+        /* Button Styles */
+        button { 
+            padding: 10px 20px; 
+            font-size: 16px; 
+            cursor: pointer; 
+            background-color: #0070f3; 
+            color: white; 
+            border: none; 
+            border-radius: 5px; 
+            margin-left: 10px;
+        }
         button:hover { background-color: #0056b3; }
+        button:disabled { background-color: #ccc; cursor: not-allowed; }
+
+        /* Message Styles */
+        #message-area {
+            margin-top: 20px;
+            font-weight: bold;
+            min-height: 24px;
+        }
+        .success { color: green; }
+        .error { color: red; }
+        .loading { color: blue; }
     </style>
 </head>
 <body>
 
-    <h1>Run Workflow via Link</h1>
-    <p>Type text below to generate the workflow link and run it.</p>
-
-    <!-- 
-      This form creates the link automatically:
-      action: The destination (/api/run-workflow)
-      method: GET (puts the text in the URL)
-      name="api": The parameter name
-    -->
-    <form action="/api/run-workflow" method="GET">
-        <input type="text" name="api" placeholder="Type parameter here..." required>
-        <button type="submit">Run & Go to Link</button>
+    <h1>Workflow Runner</h1>
+    
+    <!-- We use a Form to handle the submit action -->
+    <form id="workflowForm">
+        <input type="text" id="apiParam" name="api" placeholder="Enter text..." required>
+        <button type="submit" id="runBtn">Run Workflow</button>
     </form>
+
+    <!-- Messages appear here -->
+    <div id="message-area"></div>
+
+    <script>
+        const form = document.getElementById('workflowForm');
+        const messageArea = document.getElementById('message-area');
+        const btn = document.getElementById('runBtn');
+        const input = document.getElementById('apiParam');
+
+        form.addEventListener('submit', async function(event) {
+            // 1. Stop the browser from redirecting/reloading
+            event.preventDefault();
+
+            const text = input.value;
+            if (!text) return;
+
+            // 2. Show "Sending..." state
+            messageArea.innerText = "Sending request...";
+            messageArea.className = "loading";
+            btn.disabled = true; // Disable button while waiting
+
+            try {
+                // 3. Send the request silently
+                const response = await fetch(`/api/run-workflow?api=${encodeURIComponent(text)}`);
+                const data = await response.json();
+
+                // 4. Show Result
+                if (response.ok) {
+                    messageArea.innerText = `✅ Success: ${data.message}`;
+                    messageArea.className = "success";
+                } else {
+                    messageArea.innerText = `❌ Failed: ${data.error}`;
+                    messageArea.className = "error";
+                }
+
+            } catch (error) {
+                messageArea.innerText = `❌ Network Error: ${error.message}`;
+                messageArea.className = "error";
+            } finally {
+                // 5. Re-enable button
+                btn.disabled = false;
+            }
+        });
+    </script>
 
 </body>
 </html>
