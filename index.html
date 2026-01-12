@@ -7,41 +7,32 @@
     <style>
         body { font-family: sans-serif; padding: 50px; text-align: center; background-color: #f9f9f9; }
         
-        /* Container */
         .container { max-width: 500px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
 
-        /* Counter Display */
+        /* Counter Box */
         .counter-box { margin-bottom: 30px; font-size: 18px; color: #333; }
         .counter-number { font-size: 32px; font-weight: bold; color: #0070f3; }
 
-        /* Form Styles */
+        /* Buttons */
         input { 
-            padding: 10px; 
-            font-size: 16px; 
-            width: 70%; 
-            border: 1px solid #ccc; 
-            border-radius: 5px;
+            padding: 10px; font-size: 16px; width: 70%; 
+            border: 1px solid #ccc; border-radius: 5px;
         }
         button { 
-            padding: 10px 20px; 
-            font-size: 16px; 
-            cursor: pointer; 
-            background-color: #0070f3; 
-            color: white; 
-            border: none; 
-            border-radius: 5px; 
-            width: 25%;
+            padding: 10px 20px; font-size: 16px; cursor: pointer; 
+            background-color: #0070f3; color: white; border: none; border-radius: 5px; 
+            width: auto; margin-left: 5px;
         }
         button:hover { background-color: #0056b3; }
-        button:disabled { background-color: #ccc; cursor: not-allowed; }
+        button:disabled { background-color: #ccc; }
+        
+        .refresh-btn { background-color: #28a745; margin-top: 10px; width: 100%; }
+        .refresh-btn:hover { background-color: #218838; }
 
-        /* Message Styles */
-        #message-area {
-            margin-top: 20px;
-            font-weight: bold;
-            min-height: 24px;
-            font-size: 14px;
-        }
+        /* Messages */
+        #message-area { margin-top: 20px; font-weight: bold; min-height: 24px; font-size: 14px; }
+        #debug-area { margin-top: 10px; font-size: 12px; color: #666; font-style: italic; }
+        
         .success { color: green; }
         .error { color: red; }
         .loading { color: blue; }
@@ -52,55 +43,80 @@
     <div class="container">
         <h1>Workflow Runner</h1>
 
-        <!-- Display Counter Here -->
         <div class="counter-box">
-            Remaining Runs: <span id="countDisplay" class="counter-number">Loading...</span>
+            Remaining Runs: 
+            <!-- We add a placeholder -->
+            <span id="countDisplay" class="counter-number">...</span>
         </div>
 
-        <!-- Form -->
+        <!-- Manual Refresh Button -->
+        <button onclick="fetchCounter()" class="refresh-btn">🔄 Refresh Counter</button>
+
+        <hr style="margin: 20px 0; border: 0; border-top: 1px solid #eee;">
+
         <form id="workflowForm">
             <input type="text" id="apiParam" name="api" placeholder="Enter text..." required>
             <button type="submit" id="runBtn">Run</button>
         </form>
 
-        <!-- Status Message -->
         <div id="message-area"></div>
+        <!-- Debug area shows exact errors -->
+        <div id="debug-area"></div>
     </div>
 
     <script>
         const form = document.getElementById('workflowForm');
         const messageArea = document.getElementById('message-area');
+        const debugArea = document.getElementById('debug-area');
         const btn = document.getElementById('runBtn');
         const input = document.getElementById('apiParam');
         const countDisplay = document.getElementById('countDisplay');
 
-        // --- UPDATED: Uses your new internal Vercel API ---
-        const COUNTER_URL = "/api/counter"; 
+        const COUNTER_URL = "/api/counter";
 
-        // 1. Function to fetch and update the counter
+        // 1. Improved Fetch Function with Error Handling
         async function fetchCounter() {
+            debugArea.innerText = "Checking status...";
+            countDisplay.innerText = "Loading...";
+            countDisplay.style.color = "blue";
+
             try {
                 const response = await fetch(COUNTER_URL);
-                const data = await response.json();
                 
-                countDisplay.innerText = data.count;
-                
-                // Visual check: if 0, turn red
-                if (data.count <= 0) {
-                    countDisplay.style.color = "red";
-                } else {
-                    countDisplay.style.color = "#0070f3";
+                console.log("API Status:", response.status);
+
+                // If API returns error (404 or 500)
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`API Error ${response.status}: ${errorText}`);
                 }
+
+                const data = await response.json();
+                console.log("Data received:", data);
+
+                // Check if data.count exists and is a number
+                if (data && typeof data.count === 'number') {
+                    countDisplay.innerText = data.count;
+                    debugArea.innerText = "Data loaded successfully.";
+                    if (data.count <= 0) countDisplay.style.color = "red";
+                    else countDisplay.style.color = "#0070f3";
+                } else {
+                    throw new Error("Data format wrong: 'count' missing");
+                }
+
             } catch (error) {
                 countDisplay.innerText = "Error";
-                console.error("Could not load counter:", error);
+                countDisplay.style.color = "red";
+                debugArea.innerText = error.message;
+                messageArea.innerText = "Could not load counter. Check Debug info below.";
+                messageArea.className = "error";
             }
         }
 
-        // 2. Load the counter immediately
+        // 2. Load on start
         window.onload = fetchCounter;
 
-        // 3. Handle Form Submit
+        // 3. Form Submit
         form.addEventListener('submit', async function(event) {
             event.preventDefault(); 
             const text = input.value;
@@ -111,24 +127,19 @@
             btn.disabled = true;
 
             try {
-                // Send request to Vercel API
                 const response = await fetch(`/api/run-workflow?api=${encodeURIComponent(text)}`);
                 const data = await response.json();
 
                 if (response.ok) {
                     messageArea.innerText = `✅ Success: ${data.message}`;
                     messageArea.className = "success";
-
-                    // Refresh counter after 5 seconds (Gives GitHub time to save)
-                    setTimeout(fetchCounter, 5000);
-
+                    setTimeout(fetchCounter, 5000); // Refresh after 5s
                 } else {
                     messageArea.innerText = `❌ Failed: ${data.error}`;
                     messageArea.className = "error";
                 }
-
             } catch (error) {
-                messageArea.innerText = `❌ Network Error: ${error.message}`;
+                messageArea.innerText = `❌ Network Error`;
                 messageArea.className = "error";
             } finally {
                 btn.disabled = false;
