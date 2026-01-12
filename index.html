@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Workflow Runner</title>
+    <style>
+        body { font-family: sans-serif; padding: 50px; text-align: center; }
+        input { padding: 10px; font-size: 16px; }
+        button { padding: 10px 20px; font-size: 16px; cursor: pointer; background-color: #0070f3; color: white; border: none; border-radius: 5px; }
+        button:hover { background-color: #0056b3; }
+        #result { margin-top: 20px; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <h1>Trigger Workflow</h1>
+    
+    <!-- Input for the parameter -->
+    <input type="text" id="apiParam" placeholder="Enter parameter (e.g. restaurant rabat)" value="test123">
+    <button onclick="triggerWorkflow()">Run Workflow</button>
+
+    <!-- Display result here -->
+    <div id="result"></div>
+
+    <script>
+        async function triggerWorkflow() {
+            const param = document.getElementById('apiParam').value;
+            const resultDiv = document.getElementById('result');
+            
+            if (!param) {
+                alert("Please enter a parameter");
+                return;
+            }
+
+            resultDiv.innerText = "Starting...";
+            resultDiv.style.color = "blue";
+
+            try {
+                // Call the Vercel API function
+                const response = await fetch(`/api/run-workflow?api=${encodeURIComponent(param)}`);
+                const data = await response.json();
+
+                if (response.ok) {
+                    resultDiv.innerText = "✅ Success: " + data.message;
+                    resultDiv.style.color = "green";
+                } else {
+                    resultDiv.innerText = "❌ Error: " + data.error;
+                    resultDiv.style.color = "red";
+                }
+            } catch (error) {
+                resultDiv.innerText = "❌ Network Error: " + error;
+                resultDiv.style.color = "red";
+            }
+        }
+    </script>
+
+</body>
+</html>
