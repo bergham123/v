@@ -1,50 +1,49 @@
-// api/run-workflow.js
-
 import fetch from "node-fetch";
 
-// Replace with your repo info
+// GitHub info
 const OWNER = "bergham123";
 const REPO = "v";
-const WORKFLOW_FILE = "run-param.yml"; // your workflow file name
-const BRANCH = "main"; // branch to run workflow
-
-// Max runs allowed
+const WORKFLOW_FILE = "run-param.yml";
+const BRANCH = "main";
+const STATE_FILE_PATH = "workflow-state.json";
 const MAX_RUNS = 100;
-
-// Simple in-memory state (Vercel keeps it per instance)
-// For persistence across deployments, consider a JSON file or Vercel KV
-let workflowState = {
-  runs: 0,
-  running: false,
-};
 
 export default async function handler(req, res) {
   try {
     const { api } = req.query;
+    if (!api) return res.status(400).json({ error: "Missing api parameter" });
 
-    if (!api) {
-      return res.status(400).json({ error: "Missing api parameter" });
-    }
+    // Step 1: Get current workflow state from GitHub
+    const getFileResponse = await fetch(
+      `https://api.github.com/repos/${OWNER}/${REPO}/contents/${STATE_FILE_PATH}`,
+      {
+        headers: {
+          Authorization: `token ${process.env.GITHUB_TOKEN}`,
+          Accept: "application/vnd.github+json",
+        },
+      }
+    );
 
-    // Check run limit
-    if (workflowState.runs >= MAX_RUNS) {
-      return res
-        .status(403)
-        .json({ error: "Run limit reached. Workflow will not run." });
-    }
+    if (!getFileResponse.ok)
+      return res.status(getFileResponse.status).json({ error: "Failed to get state file" });
 
-    // Check if workflow is already running
-    if (workflowState.running) {
-      return res
-        .status(429)
-        .json({ error: "Workflow is currently running. Try later." });
-    }
+    const fileData = await getFileResponse.json();
+    let state = JSON.parse(Buffer.from(fileData.content, "base64").toString("utf-8"));
+    const sha = fileData.sha; // needed to update file
 
-    // Mark workflow as running
-    workflowState.running = true;
+    // Step 2: Check limits
+    if (state.runs >= MAX_RUNS)
+      return res.status(403).json({ error: "Run limit reached. Workflow will not run." });
 
-    // Call GitHub workflow_dispatch API
-    const response = await fetch(
+    if (state.running)
+      return res.status(429).json({ error: "Workflow is currently running. Try later." });
+
+    // Step 3: Mark workflow as running
+    state.running = true;
+    await updateStateFile(state, sha);
+
+    // Step 4: Trigger GitHub workflow
+    const triggerResponse = await fetch(
       `https://api.github.com/repos/${OWNER}/${REPO}/actions/workflows/${WORKFLOW_FILE}/dispatches`,
       {
         method: "POST",
@@ -55,35 +54,58 @@ export default async function handler(req, res) {
         },
         body: JSON.stringify({
           ref: BRANCH,
-          inputs: {
-            api_param: api,
-          },
+          inputs: { api_param: api },
         }),
       }
     );
 
-    if (!response.ok) {
-      workflowState.running = false;
-      return res.status(response.status).json({
+    if (!triggerResponse.ok) {
+      state.running = false;
+      await updateStateFile(state, sha);
+      return res.status(triggerResponse.status).json({
         error: "Failed to trigger workflow",
-        details: await response.text(),
+        details: await triggerResponse.text(),
       });
     }
 
-    // Increment runs
-    workflowState.runs += 1;
-
-    // After triggering, set running to false
-    workflowState.running = false;
+    // Step 5: Increment runs and reset running
+    state.runs += 1;
+    state.running = false;
+    await updateStateFile(state, sha);
 
     return res.json({
       message: "Workflow triggered successfully",
       api_param: api,
-      runs_done: workflowState.runs,
-      runs_left: MAX_RUNS - workflowState.runs,
+      runs_done: state.runs,
+      runs_left: MAX_RUNS - state.runs,
     });
+
   } catch (error) {
-    workflowState.running = false;
     return res.status(500).json({ error: error.message });
+  }
+}
+
+// Helper to update JSON file in GitHub repo
+async function updateStateFile(state, sha) {
+  const response = await fetch(
+    `https://api.github.com/repos/${OWNER}/${REPO}/contents/${STATE_FILE_PATH}`,
+    {
+      method: "PUT",
+      headers: {
+        Authorization: `token ${process.env.GITHUB_TOKEN}`,
+        Accept: "application/vnd.github+json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        message: "Update workflow state",
+        content: Buffer.from(JSON.stringify(state, null, 2)).toString("base64"),
+        sha,
+        branch: BRANCH,
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error("Failed to update workflow state file");
   }
 }
