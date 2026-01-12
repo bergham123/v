@@ -11,7 +11,7 @@ from bs4 import BeautifulSoup
 # --- Configuration ---
 DATA_DIR = "data"
 os.makedirs(DATA_DIR, exist_ok=True)
-MAX_PAGES = 5  # We will fetch exactly 5 pages
+MAX_PAGES = 5
 
 # Regex for phone numbers
 PHONE_REGEX = re.compile(r'(0\d[\s\-]?\d{2}[\s\-]?\d{2}[\s\-]?\d{2}[\s\-]?\d{2})')
@@ -21,13 +21,13 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(mes
 logger = logging.getLogger(__name__)
 
 def scrape_google(query):
-    """Scrape Google search results for a query (Fixed 5 pages)."""
+    """Scrape Google search results (Universal approach)."""
     results = []
     
-    # URL Template
-    BASE_URL = "https://www.google.com/search?q={q}&udm=1&start={start}"
+    # URL Template (Removed &udm=1 to get standard stable results)
+    BASE_URL = "https://www.google.com/search?q={q}&start={start}"
     
-    # Fake User-Agent to look like a real Chrome browser (Helps avoid blocking)
+    # User-Agent
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
@@ -40,60 +40,65 @@ def scrape_google(query):
             page.set_extra_http_headers(headers)
             page.set_default_timeout(60000)
 
-            # --- FIXED LOOP: Run exactly 5 times ---
             for page_num in range(1, MAX_PAGES + 1):
-                # Calculate start (Page 1 = 0, Page 2 = 10, etc.)
                 start = (page_num - 1) * 10
-                
                 current_url = BASE_URL.format(q=query, start=start)
                 logger.info(f"Scraping page {page_num}/{MAX_PAGES} -> {current_url}")
 
                 page.goto(current_url)
                 page.wait_for_timeout(4000) 
 
-                # Check for Google Block
-                title = page.title().lower()
-                if "unusual traffic" in title or "check you're not a robot" in title:
-                    logger.error("⚠️ Google blocked this IP. Stopping early.")
+                # 1. LOG PAGE TITLE (To check for Captcha)
+                title = page.title()
+                logger.info(f"Page Title: {title}") 
+                
+                if "unusual traffic" in title.lower() or "check you're not a robot" in title.lower() or "captcha" in title.lower():
+                    logger.error("⚠️ Google blocked this IP.")
                     break
 
                 html = page.content()
                 soup = BeautifulSoup(html, "html.parser")
 
-                # Select Items
+                # 2. TRY TWO SELECTORS
+                # Selector A: The Visual Card (w7Dbne)
                 items = soup.select("div.w7Dbne")
                 
+                # Selector B: Standard Search Result (div.g) - Fallback
                 if not items:
-                    logger.info(f"Page {page_num} returned no items (or selectors changed).")
-                    # We DO NOT stop. We just continue to next page as you requested.
-                    continue 
+                    items = soup.select("div.g")
+
+                if not items:
+                    logger.info(f"Page {page_num}: No items found with standard selectors.")
+                    continue
 
                 current_page_results = 0
 
                 for item in items:
-                    name_tag = item.select_one("span.OSrXXb")
-                    if not name_tag:
-                        continue
+                    # Try to find Name
+                    name_tag = item.select_one("span.OSrXXb") or item.select_one("h3") or item.select_one("h2")
+                    name = name_tag.get_text(strip=True) if name_tag else "Unknown Name"
                     
-                    name = name_tag.get_text(strip=True)
                     phone = None
                     
-                    for div in item.find_all("div"):
-                        text = div.get_text(" ", strip=True)
-                        match = PHONE_REGEX.search(text)
-                        if match:
-                            phone = match.group(1)
-                            break
+                    # Scan entire item content for phone number
+                    text = item.get_text(" ", strip=True)
+                    match = PHONE_REGEX.search(text)
+                    if match:
+                        phone = match.group(1)
 
+                    # Try to find Image
                     img_tag = item.select_one("img")
                     image_link = img_tag['src'] if img_tag else None
 
-                    if phone:
+                    # Only save if we have a phone number AND a name
+                    if phone and name != "Unknown Name":
                         entry = {"name": name, "phone": phone, "image": image_link}
                         if entry not in results:
                             results.append(entry)
                             current_page_results += 1
                             logger.info(f"Found: {name} - {phone}")
+                        else:
+                            logger.info(f"Duplicate skipped: {name} - {phone}")
 
                 logger.info(f"Finished page {page_num}. Added {current_page_results} new results.")
                 time.sleep(2)
