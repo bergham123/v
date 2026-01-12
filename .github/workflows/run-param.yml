@@ -22,7 +22,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
         with:
-          fetch-depth: 0  # Fetch all history for proper versioning
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -38,7 +38,7 @@ jobs:
       - name: Install Playwright browsers
         run: |
           python -m playwright install chromium
-          python -m playwright install-deps  # Install system dependencies
+          python -m playwright install-deps
 
       - name: Create data directory
         run: |
@@ -66,7 +66,8 @@ jobs:
       - name: Debug - Show Input Parameter
         run: |
           echo "Received query parameter: ${{ github.event.inputs.api_param }}"
-          echo "Parameter length: ${#{{ github.event.inputs.api_param }}}"
+          # Use Python to get length safely
+          python -c "query = '${{ github.event.inputs.api_param }}'; print(f'Parameter length: {len(query)}')"
 
       # ----------------- RUN PYTHON SCRIPT -----------------
       - name: Run Python Scraper
@@ -88,8 +89,8 @@ jobs:
           fi
           
         env:
-          MAX_PAGES: 5  # Optional: override from workflow
-          PYTHONUNBUFFERED: 1  # For real-time logs
+          MAX_PAGES: 5
+          PYTHONUNBUFFERED: 1
           
       # ----------------------------------------------------
 
@@ -101,7 +102,6 @@ jobs:
           echo "1. No results found for the query"
           echo "2. Google blocking the request"
           echo "3. Scraper timeout or error"
-          exit 0  # Don't fail the workflow, just warn
 
       - name: Decrement Counter
         run: |
@@ -134,7 +134,6 @@ jobs:
             git commit -m "Update scraper results and counter [skip ci]
 
             Query: ${{ github.event.inputs.api_param }}
-            Counter decremented to: $NEW_COUNT
             Files generated: ${{ steps.scrape.outputs.files_generated }}"
             echo "changes_committed=true" >> $GITHUB_OUTPUT
           fi
@@ -151,26 +150,31 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Query:** \`${{ github.event.inputs.api_param }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Counter:**" >> $GITHUB_STEP_SUMMARY
-          echo "- Previous: $(({{ steps.read_count.outputs.current_count }} + 1))" >> $GITHUB_STEP_SUMMARY
-          echo "- New: {{ steps.read_count.outputs.current_count }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
           
-          if [ -d "data" ]; then
+          # Read current count
+          if [ -f "counter.json" ]; then
+            CURRENT_COUNT=$(python -c "import json; print(json.load(open('counter.json'))['count'])")
+            echo "**Counter:** $CURRENT_COUNT remaining" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # List generated files
+          if [ -d "data" ] && [ "$(ls -A data)" ]; then
             echo "**Data Generated:**" >> $GITHUB_STEP_SUMMARY
             for file in data/*.json; do
               if [ -f "$file" ]; then
                 FILE_NAME=$(basename "$file")
-                RESULT_COUNT=$(python -c "import json; data=json.load(open('$file')); print(len(data.get('results', [])))" 2>/dev/null || echo "0")
-                echo "- \`$FILE_NAME\`: $RESULT_COUNT results" >> $GITHUB_STEP_SUMMARY
+                echo "- \`$FILE_NAME\`" >> $GITHUB_STEP_SUMMARY
               fi
             done
+          else
+            echo "**No data files generated**" >> $GITHUB_STEP_SUMMARY
           fi
+          echo "" >> $GITHUB_STEP_SUMMARY
           
+          # Status
           if [ "${{ job.status }}" = "success" ]; then
-            echo "" >> $GITHUB_STEP_SUMMARY
             echo "✅ **Workflow completed successfully**" >> $GITHUB_STEP_SUMMARY
           else
-            echo "" >> $GITHUB_STEP_SUMMARY
             echo "❌ **Workflow failed or was cancelled**" >> $GITHUB_STEP_SUMMARY
           fi
