@@ -8,13 +8,8 @@ on:
   workflow_dispatch:
     inputs:
       api_param:
-        description: 'Search Query (e.g. hotel rabat)'
+        description: 'Search Query + Params (e.g. hotel&cp=34.00~-6.00)'
         required: true
-      # This name MUST match the parameter you send from the URL
-      map_bounds:
-        description: 'Map Bounds (North~West~South~East)'
-        required: false
-        default: ''
 
 permissions:
   contents: write
@@ -55,9 +50,8 @@ jobs:
       # ----------------- RUN PYTHON SCRIPT -----------------
       - name: Run Python Scraper
         run: |
-          # Pass api_param as arg 1
-          # Pass map_bounds as arg 2
-          python scraper.py "${{ github.event.inputs.api_param }}" "${{ github.event.inputs.map_bounds }}"
+          # Pass api_param (which now contains both query and cp)
+          python scraper.py "${{ github.event.inputs.api_param }}"
       # ----------------------------------------------------
 
       - name: Decrement Counter
