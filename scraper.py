@@ -8,7 +8,7 @@ import html
 from datetime import datetime
 from playwright.sync_api import sync_playwright
 from bs4 import BeautifulSoup
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, urljoin
 
 # --- Configuration ---
 DATA_DIR = "data"
@@ -16,9 +16,7 @@ os.makedirs(DATA_DIR, exist_ok=True)
 DEBUG_DIR = os.path.join(DATA_DIR, "debug_html")
 os.makedirs(DEBUG_DIR, exist_ok=True)
 
-# Set your target number of results here
-TARGET_RESULTS = 100 
-MAX_SCROLL_ITERATIONS = 30  # Safety limit (prevents infinite loop)
+MAX_SCROLL_ITERATIONS = 20 
 
 # Regex for phone numbers
 PHONE_REGEX = re.compile(r'(0\d[\s\-]?\d{2}[\s\-]?\d{2}[\s\-]?\d{2}[\s\-]?\d{2})')
@@ -78,6 +76,7 @@ def parse_combined_input(raw_input):
     cp = None
     mb = None
     
+    # Loop through remaining parts to find cp or mb
     for part in parts[1:]:
         if part.startswith('cp='):
             cp = part.split('=', 1)[1]
@@ -88,8 +87,9 @@ def parse_combined_input(raw_input):
 
 def scrape_bing_maps(raw_input):
     """
-    Main scraper function.
+    Main scraper function accepting a combined string.
     """
+    # 1. Parse the input to get Query, CP, and MB
     query, cp, mb = parse_combined_input(raw_input)
     
     results = []
@@ -127,83 +127,58 @@ def scrape_bing_maps(raw_input):
 
             page.goto(full_url, wait_until="domcontentloaded")
 
-            # Wait for initial results
+            # --- SCROLLING ---
+            logger.info("Waiting for initial results...")
             try:
                 page.wait_for_selector("li.listingItem_fPE1q", state="attached", timeout=15000)
             except:
-                logger.warning("Timeout waiting for initial results.")
-                # Return empty results so workflow doesn't crash, just saves empty file
+                logger.warning("Timeout waiting for initial results. Saving debug HTML.")
+                with open(os.path.join(DEBUG_DIR, "initial_debug.html"), "w") as f:
+                    f.write(page.content())
                 return [], "no_results"
 
-            logger.info("Starting scroll to get " + str(TARGET_RESULTS) + " results...")
-            
+            logger.info("Starting scroll...")
             scroll_iterations = 0
+            items_loaded_count = 0
             same_count_iterations = 0
 
-            # SCROLL LOOP - Stop when we have enough results
-            while len(results) < TARGET_RESULTS and scroll_iterations < MAX_SCROLL_ITERATIONS:
-                
-                # Parse current page state
-                html_content = page.content()
-                soup = BeautifulSoup(html_content, "html.parser")
-                items = soup.select("li.listingItem_fPE1q")
-                
-                # Extract new items
-                current_results_count = len(items)
-                new_items_found = False
-                
-                for item in items:
-                    entry = extract_location_data(item)
-                    # Check for duplicates based on name and phone
-                    if entry["name"] and entry["phone"]:
-                        # Simple duplicate check (optional, but good for quality)
-                        if not any(d['name'] == entry['name'] and d['phone'] == entry['phone'] for d in results):
-                            results.append(entry)
-                            new_items_found = True
-
-                # Feedback
-                if scroll_iterations % 3 == 0:
-                    logger.info(f"Scroll {scroll_iterations}: Found {len(results)} results so far...")
-
-                # Check if we hit the target
-                if len(results) >= TARGET_RESULTS:
-                    logger.info(f"Target reached: {len(results)} results.")
-                    break
-
-                # Scroll logic
-                # Check if content is stable (end of list)
-                if not new_items_found:
-                    same_count_iterations += 1
-                else:
+            while scroll_iterations < MAX_SCROLL_ITERATIONS:
+                current_items = page.locator("li.listingItem_fPE1q").count()
+                if current_items > items_loaded_count:
+                    logger.info(f"Scroll {scroll_iterations}: Loaded {current_items} items.")
+                    items_loaded_count = current_items
                     same_count_iterations = 0
-
-                # If scrolled 3 times without new items, stop
+                else:
+                    same_count_iterations += 1
+                
                 if same_count_iterations >= 3:
-                    logger.info("End of list reached.")
+                    logger.info("Reached end of results.")
                     break
 
                 try:
                     page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
                 except:
                     pass
-                
-                # Wait for data to load (randomized slightly to look human)
-                time.sleep(1.5) 
+                time.sleep(2) 
                 scroll_iterations += 1
 
-            # Final Parse (in case we missed some during loop)
+            # --- PARSING ---
+            logger.info("Parsing HTML...")
             html_content = page.content()
+            debug_filename = os.path.join(DEBUG_DIR, "bing_maps_final.html")
+            with open(debug_filename, "w", encoding="utf-8") as f:
+                f.write(html_content)
+
             soup = BeautifulSoup(html_content, "html.parser")
             items = soup.select("li.listingItem_fPE1q")
-            
+            logger.info(f"Found {len(items)} items to process.")
+
             for item in items:
                 entry = extract_location_data(item)
                 if entry["name"] and entry["phone"]:
-                     if not any(d['name'] == entry['name'] and d['phone'] == entry['phone'] for d in results):
+                    if entry not in results:
                         results.append(entry)
-            
-            # Limit exactly to TARGET_RESULTS if we got more
-            results = results[:TARGET_RESULTS]
+                        logger.info(f"✅ {entry['name']} | {entry['phone']}")
 
             browser.close()
 
@@ -216,13 +191,14 @@ def scrape_bing_maps(raw_input):
     filename = f"{safe_name}-maps-{now}.json"
     filepath = os.path.join(DATA_DIR, filename)
     
-    logger.info(f"Finished. Found {len(results)} results. Saving to {filepath}")
-    
+    logger.info(f"Saving {len(results)} results to {filepath}")
     with open(filepath, "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
 
     return results, filename
 
 if __name__ == "__main__":
+    # Only takes one argument now
     query_arg = sys.argv[1] if len(sys.argv) > 1 else "restaurant"
     scrape_bing_maps(query_arg)
+    logger.info("Job finished.")
