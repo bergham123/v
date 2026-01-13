@@ -1,0 +1,65 @@
+[
+  {
+    "name": "Opheon",
+    "phone": "+212 5367-04050",
+    "image": null,
+    "latitude": 34.66438293457031,
+    "longitude": -1.9068609476089478
+  },
+  {
+    "name": "Café mermoz méknes",
+    "phone": "+212 691-208558",
+    "image": null,
+    "latitude": 34.68891906738281,
+    "longitude": -1.9167555570602417
+  },
+  {
+    "name": "Brunch's",
+    "phone": "+212 5367-05049",
+    "image": null,
+    "latitude": 34.67498779296875,
+    "longitude": -1.912263035774231
+  },
+  {
+    "name": "H Coffee",
+    "phone": "+212 689-307137",
+    "image": null,
+    "latitude": 34.704376220703125,
+    "longitude": -1.8957555294036865
+  },
+  {
+    "name": "CAFE DENVER",
+    "phone": "+212 612-134645",
+    "image": null,
+    "latitude": 34.68769836425781,
+    "longitude": -1.915560007095337
+  },
+  {
+    "name": "RACHOS COFFEE",
+    "phone": "+212 5367-16417",
+    "image": null,
+    "latitude": 34.68151092529297,
+    "longitude": -1.890120029449463
+  },
+  {
+    "name": "L'emeraude Café",
+    "phone": "+212 603-079573",
+    "image": null,
+    "latitude": 34.69109344482422,
+    "longitude": -1.9177160263061523
+  },
+  {
+    "name": "Rihab",
+    "phone": "+212 5366-90505",
+    "image": null,
+    "latitude": 34.67835998535156,
+    "longitude": -1.9191670417785645
+  },
+  {
+    "name": "Ice Vox",
+    "phone": "+212 5365-24141",
+    "image": null,
+    "latitude": 34.68473815917969,
+    "longitude": -1.9130799770355225
+  }
+]
