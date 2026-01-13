@@ -11,106 +11,188 @@
     <style>
         .card-enter { animation: fadeIn 0.3s ease-in; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        /* Custom Scrollbar for Sidebar */
+        #fileList::-webkit-scrollbar { width: 6px; }
+        #fileList::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 4px; }
     </style>
 </head>
 <body class="bg-gray-100 h-screen flex overflow-hidden">
 
     <!-- Sidebar: File List -->
-    <div class="w-64 bg-white border-r border-gray-200 flex flex-col h-full">
-        <div class="p-4 border-b border-gray-200">
-            <h2 class="text-xl font-bold text-gray-800"><i class="fa-solid fa-database text-blue-500"></i> Saved Searches</h2>
+    <div class="w-72 bg-white border-r border-gray-200 flex flex-col h-full shadow-lg z-20">
+        <div class="p-5 border-b border-gray-200 bg-gray-50">
+            <h2 class="text-xl font-bold text-gray-800"><i class="fa-solid fa-database text-blue-500 mr-2"></i> Saved Searches</h2>
+            <div id="rateLimitNotice" class="text-xs text-yellow-600 mt-2 hidden">
+                <i class="fa-solid fa-triangle-exclamation"></i> API Rate Limit: Add ?token=XYZ to URL
+            </div>
         </div>
-        <div class="flex-1 overflow-y-auto p-2" id="fileList">
+        
+        <div class="flex-1 overflow-y-auto p-3" id="fileList">
             <!-- Files will be injected here -->
-            <div class="text-center text-gray-500 mt-4">Loading files...</div>
+            <div class="flex items-center justify-center h-24 text-gray-400">
+                <i class="fa-solid fa-circle-notch fa-spin mr-2"></i> Loading files...
+            </div>
         </div>
-        <div class="p-4 border-t border-gray-200 bg-gray-50">
-            <a href="/" class="block w-full text-center bg-blue-600 text-white py-2 rounded hover:bg-blue-700 transition">
-                <i class="fa-solid fa-plus"></i> New Search
+
+        <div class="p-4 border-t border-gray-200 bg-white">
+            <a href="index.html" class="block w-full text-center bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition shadow-md font-semibold">
+                <i class="fa-solid fa-plus mr-2"></i> New Search
             </a>
         </div>
     </div>
 
     <!-- Main Content -->
-    <div class="flex-1 flex flex-col h-full overflow-hidden">
+    <div class="flex-1 flex flex-col h-full overflow-hidden relative">
         
         <!-- Header -->
         <div class="bg-white p-4 border-b border-gray-200 flex justify-between items-center shadow-sm z-10">
-            <div id="currentFileName" class="text-lg font-semibold text-gray-700">
-                Select a file to view results
+            <div class="flex items-center">
+                <i class="fa-solid fa-file-lines text-gray-400 mr-3 text-xl"></i>
+                <div id="currentFileName" class="text-lg font-semibold text-gray-700 truncate max-w-md">
+                    Select a file to view results
+                </div>
             </div>
             
-            <div class="flex space-x-2">
-                <span class="text-sm text-gray-500 mr-2 self-center">View:</span>
-                <button onclick="setView('grid')" id="btnGrid" class="p-2 rounded hover:bg-gray-100 text-blue-600">
+            <div class="flex space-x-2 bg-gray-100 p-1 rounded-lg">
+                <button onclick="setView('grid')" id="btnGrid" class="p-2 px-3 rounded-md hover:bg-white hover:shadow-sm transition text-blue-600 bg-white shadow-sm" title="Grid View">
                     <i class="fa-solid fa-border-all"></i>
                 </button>
-                <button onclick="setView('list')" id="btnList" class="p-2 rounded hover:bg-gray-100 text-gray-500">
+                <button onclick="setView('list')" id="btnList" class="p-2 px-3 rounded-md hover:bg-white hover:shadow-sm transition text-gray-500" title="List View">
                     <i class="fa-solid fa-list"></i>
                 </button>
             </div>
         </div>
 
         <!-- Results Area -->
-        <div class="flex-1 overflow-y-auto p-6 bg-gray-50" id="resultsArea">
-            <div class="text-center text-gray-400 mt-20">
-                <i class="fa-regular fa-folder-open text-4xl mb-4"></i>
-                <p>No data selected</p>
+        <div class="flex-1 overflow-y-auto p-8 bg-gray-50" id="resultsArea">
+            <div class="flex flex-col items-center justify-center h-full text-gray-400 opacity-60">
+                <i class="fa-regular fa-folder-open text-6xl mb-6"></i>
+                <p class="text-lg">Select a search from the sidebar to view results</p>
             </div>
         </div>
     </div>
 
     <script>
+        // --- CONFIGURATION ---
+        const OWNER = "bergham123";
+        const REPO = "v";
+        const BRANCH = "main";
+        
+        // --- ELEMENTS ---
         const fileListEl = document.getElementById('fileList');
         const resultsArea = document.getElementById('resultsArea');
         const currentFileName = document.getElementById('currentFileName');
         const btnGrid = document.getElementById('btnGrid');
         const btnList = document.getElementById('btnList');
+        const rateLimitNotice = document.getElementById('rateLimitNotice');
 
         let currentView = 'grid'; // 'grid' or 'list'
+        let currentData = []; // Store data locally for view switching
 
-        // 1. Load File List
+        // Check for Token (to increase API rate limit)
+        const urlParams = new URLSearchParams(window.location.search);
+        const TOKEN = urlParams.get('token');
+
+        // 1. Load File List from GitHub API
         async function loadFiles() {
+            let apiUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/data?ref=${BRANCH}`;
+            let headers = {};
+            
+            if (TOKEN) {
+                headers['Authorization'] = `token ${TOKEN}`;
+            }
+
             try {
-                const res = await fetch('/api/files');
-                const files = await res.json();
+                const res = await fetch(apiUrl, { headers: headers });
                 
-                fileListEl.innerHTML = '';
-                
-                if (files.length === 0) {
-                    fileListEl.innerHTML = '<div class="text-gray-500 text-sm p-2">No saved searches yet.</div>';
+                // Handle Rate Limits
+                if (res.status === 403 && res.headers.get("X-RateLimit-Remaining") === "0") {
+                    fileListEl.innerHTML = '<div class="text-red-500 text-sm p-4 text-center">API Limit Exceeded.<br>Please reload with token.</div>';
+                    rateLimitNotice.classList.remove('hidden');
                     return;
                 }
+                
+                if (!res.ok) throw new Error(`GitHub API Error: ${res.status}`);
 
-                files.forEach(file => {
-                    const btn = document.createElement('div');
-                    btn.className = 'p-3 mb-2 bg-gray-50 hover:bg-blue-50 rounded cursor-pointer border border-transparent hover:border-blue-200 transition text-sm font-medium text-gray-700 truncate';
-                    btn.innerHTML = `<i class="fa-solid fa-file-code text-gray-400 mr-2"></i> ${file}`;
-                    btn.onclick = () => loadResults(file);
-                    fileListEl.appendChild(btn);
-                });
+                const files = await res.json();
+                
+                // Filter and Sort
+                // We only want .json files
+                const jsonFiles = files.filter(f => f.type === 'file' && f.name.endsWith('.json'));
+                
+                // Sort by name descending (since name contains date, this puts newest first)
+                jsonFiles.sort((a, b) => b.name.localeCompare(a.name));
+
+                renderFileList(jsonFiles);
+
             } catch (err) {
-                fileListEl.innerHTML = '<div class="text-red-500 text-sm p-2">Error loading files.</div>';
+                console.error(err);
+                fileListEl.innerHTML = `<div class="text-red-500 text-sm p-4 text-center">Error loading files.<br>${err.message}</div>`;
             }
         }
 
-        // 2. Load Specific Results
+        function renderFileList(files) {
+            fileListEl.innerHTML = '';
+            
+            if (files.length === 0) {
+                fileListEl.innerHTML = '<div class="text-gray-500 text-sm p-4 text-center italic">No saved searches found in /data folder.</div>';
+                return;
+            }
+
+            files.forEach(file => {
+                const btn = document.createElement('div');
+                btn.className = 'group flex items-center p-3 mb-2 bg-white border border-gray-200 rounded-lg cursor-pointer hover:border-blue-400 hover:shadow-md transition select-none';
+                
+                // Format filename (remove .json)
+                const cleanName = file.name.replace('.json', '');
+
+                btn.innerHTML = `
+                    <div class="w-8 h-8 rounded-full bg-blue-50 text-blue-500 flex items-center justify-center mr-3 group-hover:bg-blue-500 group-hover:text-white transition">
+                        <i class="fa-solid fa-file-code text-xs"></i>
+                    </div>
+                    <div class="flex-1 overflow-hidden">
+                        <div class="text-sm font-semibold text-gray-700 truncate group-hover:text-blue-600">${cleanName}</div>
+                        <div class="text-xs text-gray-400">JSON Data</div>
+                    </div>
+                    <i class="fa-solid fa-chevron-right text-gray-300 text-xs group-hover:text-blue-400"></i>
+                `;
+                
+                btn.onclick = () => loadResults(file.name);
+                fileListEl.appendChild(btn);
+            });
+        }
+
+        // 2. Load Specific Results from Raw GitHub
         async function loadResults(filename) {
             currentFileName.innerText = filename;
-            resultsArea.innerHTML = '<div class="text-center mt-10"><i class="fa-solid fa-spinner fa-spin text-3xl text-blue-500"></i><p class="mt-2 text-gray-500">Loading data...</p></div>';
+            resultsArea.innerHTML = `
+                <div class="flex flex-col items-center justify-center h-full">
+                    <i class="fa-solid fa-circle-notch fa-spin text-4xl text-blue-500 mb-4"></i>
+                    <p class="text-gray-500 animate-pulse">Loading results for ${filename}...</p>
+                </div>`;
+
+            // Use Raw URL (fastest for reading file content)
+            const rawUrl = `https://raw.githubusercontent.com/${OWNER}/${REPO}/${BRANCH}/data/${filename}`;
 
             try {
-                const res = await fetch(`/api/read-file?filename=${filename}`);
+                const res = await fetch(rawUrl);
+                if (!res.ok) throw new Error("File not found or unreadable");
+                
                 const data = await res.json();
+                currentData = data; // Save for view switching
 
-                if (!Array.isArray(data)) {
-                    throw new Error("Invalid data format");
-                }
+                if (!Array.isArray(data)) throw new Error("Data format is incorrect (expected Array)");
 
                 renderResults(data);
 
             } catch (err) {
-                resultsArea.innerHTML = `<div class="text-red-500 text-center mt-10">Error loading data: ${err.message}</div>`;
+                resultsArea.innerHTML = `
+                    <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded max-w-lg mx-auto mt-10">
+                        <strong class="font-bold">Error:</strong>
+                        <span class="block sm:inline">${err.message}</span>
+                    </div>
+                `;
             }
         }
 
@@ -120,49 +202,76 @@
             
             // Container Class based on view
             const containerClass = currentView === 'grid' 
-                ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6' 
-                : 'flex flex-col gap-4 max-w-4xl mx-auto';
+                ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6' 
+                : 'flex flex-col gap-3 max-w-5xl mx-auto';
 
             const container = document.createElement('div');
             container.className = containerClass;
 
             if (data.length === 0) {
-                resultsArea.innerHTML = '<div class="text-gray-500 text-center mt-10">No results found in this file.</div>';
+                resultsArea.innerHTML = `
+                    <div class="text-center mt-10">
+                        <div class="inline-block p-4 rounded-full bg-gray-200 text-gray-500 mb-3">
+                            <i class="fa-solid fa-inbox text-2xl"></i>
+                        </div>
+                        <p class="text-gray-500">No results found in this file.</p>
+                    </div>`;
                 return;
             }
 
-            data.forEach(item => {
+            data.forEach((item, index) => {
                 const card = document.createElement('div');
-                card.className = 'bg-white rounded-lg shadow border border-gray-100 p-4 card-enter relative hover:shadow-md transition';
+                // Add staggered animation delay
+                card.style.animationDelay = `${index * 0.05}s`;
+                card.className = 'bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-lg transition duration-300 overflow-hidden card-enter relative group';
 
-                const imgUrl = item.image || `https://ui-avatars.com/api/?name=${item.name}&background=random`;
+                // Fallback image generator
+                const imgUrl = item.image || `https://ui-avatars.com/api/?name=${encodeURIComponent(item.name || 'Unknown')}&background=0D8ABC&color=fff&size=128`;
                 
                 // Layout changes based on view
                 if (currentView === 'grid') {
                     card.innerHTML = `
-                        <div class="flex flex-col items-center text-center h-full">
-                            <img src="${imgUrl}" alt="${item.name}" class="w-20 h-20 rounded-full object-cover mb-3 border-2 border-gray-100">
-                            <h3 class="font-bold text-gray-800 mb-1 line-clamp-2">${item.name}</h3>
-                            <p class="text-blue-600 font-mono text-sm mb-3">${item.phone}</p>
-                            <div class="mt-auto w-full pt-3 border-t border-gray-100">
-                                <a href="tel:${item.phone}" class="block w-full bg-blue-50 text-blue-600 py-1 rounded text-xs hover:bg-blue-100">
-                                    <i class="fa-solid fa-phone"></i> Call
+                        <div class="h-32 bg-gray-100 overflow-hidden relative">
+                            <img src="${imgUrl}" alt="${item.name}" class="w-full h-full object-cover group-hover:scale-105 transition duration-500">
+                        </div>
+                        <div class="p-4">
+                            <h3 class="font-bold text-gray-800 mb-1 line-clamp-1" title="${item.name}">${item.name}</h3>
+                            <div class="flex items-center mb-3">
+                                <div class="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
+                                    <div class="h-full bg-blue-500 w-2/3"></div> <!-- Decorative bar -->
+                                </div>
+                            </div>
+                            <p class="text-blue-600 font-mono font-semibold text-sm bg-blue-50 inline-block px-2 py-1 rounded border border-blue-100">${item.phone}</p>
+                            <div class="mt-4 flex gap-2">
+                                <a href="tel:${item.phone}" class="flex-1 bg-gray-800 text-white py-2 rounded text-center text-xs font-bold hover:bg-black transition">
+                                    <i class="fa-solid fa-phone mr-1"></i> Call
+                                </a>
+                                <a href="https://www.google.com/maps/search/?api=1&query=${item.latitude},${item.longitude}" target="_blank" class="flex-1 bg-white border border-gray-300 text-gray-700 py-2 rounded text-center text-xs font-bold hover:bg-gray-50 transition">
+                                    <i class="fa-solid fa-location-dot mr-1"></i> Map
                                 </a>
                             </div>
                         </div>
                     `;
                 } else {
                     // List View
-                    card.className = 'bg-white rounded-lg shadow border border-gray-100 p-4 card-enter flex items-center space-x-4';
                     card.innerHTML = `
-                        <img src="${imgUrl}" alt="${item.name}" class="w-12 h-12 rounded-full object-cover border border-gray-200">
-                        <div class="flex-1">
-                            <h3 class="font-bold text-gray-800 text-lg">${item.name}</h3>
-                            <p class="text-gray-500 text-sm">Scraped Result</p>
-                        </div>
-                        <div class="text-right">
-                            <div class="font-mono text-blue-600 font-bold text-lg">${item.phone}</div>
-                            <a href="tel:${item.phone}" class="text-xs text-gray-400 hover:text-blue-500"><i class="fa-solid fa-phone"></i> Call</a>
+                        <div class="flex items-center p-3">
+                            <img src="${imgUrl}" alt="${item.name}" class="w-14 h-14 rounded-lg object-cover border border-gray-200 shadow-sm">
+                            <div class="flex-1 ml-4 min-w-0">
+                                <h3 class="font-bold text-gray-800 text-base truncate">${item.name}</h3>
+                                <div class="text-xs text-gray-400">Data Entry</div>
+                            </div>
+                            <div class="text-right mr-4">
+                                <div class="font-mono text-blue-600 font-bold text-sm">${item.phone}</div>
+                            </div>
+                            <div class="flex gap-2">
+                                <a href="tel:${item.phone}" class="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center hover:bg-blue-500 hover:text-white transition">
+                                    <i class="fa-solid fa-phone text-xs"></i>
+                                </a>
+                                <a href="https://www.google.com/maps/search/?api=1&query=${item.latitude},${item.longitude}" target="_blank" class="w-8 h-8 rounded-full bg-gray-50 text-gray-600 flex items-center justify-center hover:bg-gray-200 transition">
+                                    <i class="fa-solid fa-location-dot text-xs"></i>
+                                </a>
+                            </div>
                         </div>
                     `;
                 }
@@ -178,27 +287,20 @@
             currentView = view;
             
             // Update Button Styles
+            const activeClass = "bg-white shadow-sm text-blue-600";
+            const inactiveClass = "text-gray-500 hover:bg-white hover:shadow-sm";
+
             if (view === 'grid') {
-                btnGrid.classList.add('text-blue-600');
-                btnGrid.classList.remove('text-gray-500');
-                btnList.classList.remove('text-blue-600');
-                btnList.classList.add('text-gray-500');
+                btnGrid.className = `p-2 px-3 rounded-md transition ${activeClass}`;
+                btnList.className = `p-2 px-3 rounded-md transition ${inactiveClass}`;
             } else {
-                btnList.classList.add('text-blue-600');
-                btnList.classList.remove('text-gray-500');
-                btnGrid.classList.remove('text-blue-600');
-                btnGrid.classList.add('text-gray-500');
+                btnList.className = `p-2 px-3 rounded-md transition ${activeClass}`;
+                btnGrid.className = `p-2 px-3 rounded-md transition ${inactiveClass}`;
             }
 
             // Re-render if data is loaded
-            if (currentFileName.innerText !== 'Select a file to view results') {
-                // Get the filename from current text, strip "Loading..." checks if needed
-                // Simple re-trigger of the last loaded file (simplification)
-                // Ideally store currentData in a variable, but for now we can re-fetch or just re-render
-                // Let's re-fetch to be safe or store global 'currentData'. 
-                // For simplicity, we'll just re-fetch the last file clicked.
-                const filename = currentFileName.innerText;
-                loadResults(filename); 
+            if (currentData.length > 0) {
+                renderResults(currentData);
             }
         }
 
