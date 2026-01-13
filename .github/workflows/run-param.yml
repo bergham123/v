@@ -32,10 +32,18 @@ jobs:
           pip install beautifulsoup4 playwright
           playwright install chromium
 
+      # --- NEW STEP: Ensure counter.json exists ---
+      - name: Init Counter
+        run: |
+          if [ ! -f counter.json ]; then
+            echo '{"count": 100}' > counter.json
+            echo "Initialized counter.json with 100 runs"
+          fi
+
       - name: Read Counter
         id: read_count
         run: |
-          if [ ! -f counter.json ]; then echo "count=0" >> $GITHUB_OUTPUT; exit 1; fi
+          # Using node to parse JSON safely
           COUNT=$(node -p "require('./counter.json').count")
           echo "current_count=$COUNT" >> $GITHUB_OUTPUT
           echo "Current limit remaining: $COUNT"
@@ -50,7 +58,6 @@ jobs:
       # ----------------- RUN PYTHON SCRIPT -----------------
       - name: Run Python Scraper
         run: |
-          # Pass api_param (which now contains both query and cp)
           python scraper.py "${{ github.event.inputs.api_param }}"
       # ----------------------------------------------------
 
@@ -67,5 +74,6 @@ jobs:
           git add counter.json
           git add data/
           
-          git commit -m "Update scraper results and counter [skip ci]"
+          # Only commit if there are changes
+          git diff --staged --quiet || git commit -m "Update scraper results and counter [skip ci]"
           git push
