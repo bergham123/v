@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Workflow Runner</title>
     
-    <!-- Leaflet CSS (Map Library) -->
+    <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
     
     <style>
@@ -13,38 +13,52 @@
         
         .container { max-width: 600px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
 
-        /* Counter Box */
+        /* Counter */
         .counter-box { margin-bottom: 20px; font-size: 18px; color: #333; }
         .counter-number { font-size: 32px; font-weight: bold; color: #0070f3; }
 
-        /* Inputs & Buttons */
-        .input-group { display: flex; gap: 5px; margin-bottom: 15px; }
+        /* Form Elements */
         input { 
-            padding: 10px; font-size: 16px; flex-grow: 1; 
-            border: 1px solid #ccc; border-radius: 5px;
+            padding: 10px; font-size: 16px; width: 100%; 
+            border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; margin-bottom: 10px;
         }
         button { 
             padding: 10px 20px; font-size: 16px; cursor: pointer; 
             background-color: #0070f3; color: white; border: none; border-radius: 5px; 
+            transition: background 0.2s;
         }
         button:hover { background-color: #0056b3; }
-        button:disabled { background-color: #ccc; }
+        button:disabled { background-color: #ccc; cursor: not-allowed; }
         
-        .refresh-btn { background-color: #28a745; width: 100%; margin-top: 10px;}
+        .refresh-btn { background-color: #28a745; width: 100%; margin-top: 10px; }
         .refresh-btn:hover { background-color: #218838; }
 
         /* Map Styles */
         #map {
-            height: 300px;
+            height: 350px; /* Made taller for better selection */
             width: 100%;
             border: 1px solid #ccc;
             border-radius: 5px;
-            margin-bottom: 20px;
-            cursor: crosshair;
+            margin-bottom: 15px;
+            z-index: 1;
         }
-        .map-hint { font-size: 12px; color: #666; margin-bottom: 5px; font-style: italic; }
-        .clear-map-btn { font-size: 12px; padding: 5px 10px; background-color: #dc3545; margin-bottom: 10px; display: inline-block;}
-        .clear-map-btn:hover { background-color: #c82333; }
+        
+        /* Map Control Buttons */
+        .map-controls {
+            margin-bottom: 15px;
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+        }
+        
+        .select-view-btn { 
+            background-color: #6c757d; /* Grey for selection button */
+            flex: 1;
+        }
+        .select-view-btn:hover { background-color: #5a6268; }
+        .select-view-btn.active { background-color: #dc3545; } /* Red when selected */
+
+        .map-status { font-size: 12px; color: #555; margin-bottom: 5px; }
 
         /* Messages */
         #message-area { margin-top: 10px; font-weight: bold; min-height: 24px; font-size: 14px; }
@@ -70,21 +84,26 @@
         <hr style="margin: 20px 0; border: 0; border-top: 1px solid #eee;">
 
         <form id="workflowForm">
-            <!-- Search Input -->
-            <div class="input-group">
-                <input type="text" id="apiParam" name="api" placeholder="Enter text (e.g. restaurant)..." required>
-            </div>
+            <!-- 1. Search Text -->
+            <input type="text" id="apiParam" name="api" placeholder="Enter keyword (e.g. restaurant)..." required>
 
-            <!-- Hidden Input for Bounds (Sent to API) -->
+            <!-- 2. Hidden Input for Bounds -->
             <input type="hidden" id="mapBoundsInput" name="map_bounds">
 
-            <!-- Map Interface -->
-            <div class="map-hint">🖱️ Click and drag on the map to select an area (Optional)</div>
+            <!-- 3. Map -->
+            <div class="map-status">1. Zoom to area &rarr; 2. Click button below &rarr; 3. Run</div>
             <div id="map"></div>
-            <button type="button" id="clearMapBtn" class="clear-map-btn" onclick="clearMapSelection()" style="display:none;">Clear Area Selection</button>
             
-            <!-- Run Button -->
-            <button type="submit" id="runBtn" style="width: 100%;">Run Workflow</button>
+            <div class="map-controls">
+                <button type="button" id="useViewBtn" class="select-view-btn" onclick="useCurrentMapView()">
+                    📍 Use Current Map Area
+                </button>
+            </div>
+
+            <!-- 4. Submit -->
+            <button type="submit" id="runBtn" style="width: 100%; font-weight: bold; padding: 15px;">
+                Run Workflow
+            </button>
         </form>
 
         <div id="message-area"></div>
@@ -102,53 +121,43 @@
         const input = document.getElementById('apiParam');
         const countDisplay = document.getElementById('countDisplay');
         const mapBoundsInput = document.getElementById('mapBoundsInput');
-        const clearMapBtn = document.getElementById('clearMapBtn');
+        const useViewBtn = document.getElementById('useViewBtn');
 
         const COUNTER_URL = "/api/counter";
 
         // ================= MAP LOGIC =================
-        // Initialize map centered on Casablanca
-        const map = L.map('map').setView([33.5731, -7.5898], 11);
+        let map;
+        let rect = null; // The rectangle layer
 
-        // Add OpenStreetMap tiles
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; OpenStreetMap contributors'
-        }).addTo(map);
+        // Initialize Map
+        function initMap() {
+            // Default center: Casablanca
+            map = L.map('map').setView([33.5731, -7.5898], 11);
 
-        let rect = null;
-        let startLatLng = null;
+            // Add OpenStreetMap tiles
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; OpenStreetMap contributors'
+            }).addTo(map);
+        }
 
-        // 1. Mouse Down: Start Drawing
-        map.on('mousedown', (e) => {
-            startLatLng = e.latlng;
-            // If a previous selection exists, remove it
+        initMap();
+
+        // Function to lock the current view as the selection
+        function useCurrentMapView() {
+            // Get the exact bounds of what is visible on screen
+            const bounds = map.getBounds();
+            
+            // If a selection already exists, remove it
             if (rect) {
                 map.removeLayer(rect);
-                rect = null;
             }
-            // Create a new rectangle at the starting point (size 0)
-            rect = L.rectangle([startLatLng, startLatLng], {color: "#0070f3", weight: 1}).addTo(map);
-        });
 
-        // 2. Mouse Move: Resize Rectangle
-        map.on('mousemove', (e) => {
-            if (startLatLng) {
-                // Update the bounds of the rectangle to stretch from start to current mouse pos
-                rect.setBounds([startLatLng, e.latlng]);
-            }
-        });
+            // Draw a red rectangle around the screen to show what is selected
+            rect = L.rectangle(bounds, {color: "#dc3545", weight: 2, fillOpacity: 0.1}).addTo(map);
 
-        // 3. Mouse Up: Finalize Selection
-        map.on('mouseup', (e) => {
-            if (startLatLng) {
-                startLatLng = null;
-                const bounds = rect.getBounds();
-                updateBoundsInput(bounds);
-            }
-        });
-
-        function updateBoundsInput(bounds) {
-            // Extract coordinates
+            // Get Coordinates
+            // North = Top (Higher Lat), South = Bottom (Lower Lat)
+            // West = Left (Lower/Neg Lon), East = Right (Higher/Pos Lon)
             const north = bounds.getNorth();
             const west = bounds.getWest();
             const south = bounds.getSouth();
@@ -158,18 +167,15 @@
             // Example: 34.07~-7.07~33.80~-6.53
             const formattedBounds = `${north}~${west}~${south}~${east}`;
             
+            // Save to hidden input
             mapBoundsInput.value = formattedBounds;
+            
+            // UI Feedback
+            useViewBtn.classList.add('active');
+            useViewBtn.innerHTML = "✅ Area Selected";
+            
             console.log("Selected Bounds:", formattedBounds);
-            clearMapBtn.style.display = "inline-block";
-        }
-
-        function clearMapSelection() {
-            if (rect) {
-                map.removeLayer(rect);
-                rect = null;
-            }
-            mapBoundsInput.value = "";
-            clearMapBtn.style.display = "none";
+            alert(`Selected Area Bounds:\n${formattedBounds}`);
         }
 
         // ================= COUNTER LOGIC =================
@@ -180,14 +186,12 @@
 
             try {
                 const response = await fetch(COUNTER_URL);
-                
                 if (!response.ok) {
                     const errorText = await response.text();
                     throw new Error(`API Error ${response.status}: ${errorText}`);
                 }
 
                 const data = await response.json();
-                console.log("Data received:", data);
 
                 if (data && typeof data.count === 'number') {
                     countDisplay.innerText = data.count;
@@ -202,14 +206,12 @@
                 countDisplay.innerText = "Error";
                 countDisplay.style.color = "red";
                 debugArea.innerText = error.message;
-                messageArea.innerText = "Could not load counter. Check Debug info below.";
-                messageArea.className = "error";
             }
         }
 
         window.onload = fetchCounter;
 
-        // ================= FORM SUBMIT LOGIC =================
+        // ================= FORM SUBMIT =================
         form.addEventListener('submit', async function(event) {
             event.preventDefault(); 
             const text = input.value;
@@ -222,7 +224,7 @@
             btn.disabled = true;
 
             try {
-                // Construct URL with both params
+                // Construct URL with params
                 const url = `/api/run-workflow?api=${encodeURIComponent(text)}&map_bounds=${encodeURIComponent(bounds)}`;
                 
                 const response = await fetch(url);
@@ -231,8 +233,6 @@
                 if (response.ok) {
                     messageArea.innerText = `✅ Success: ${data.message}`;
                     messageArea.className = "success";
-                    // Optional: Reset map after success
-                    // clearMapSelection();
                     setTimeout(fetchCounter, 5000); 
                 } else {
                     messageArea.innerText = `❌ Failed: ${data.error}`;
