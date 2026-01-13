@@ -71,10 +71,10 @@ def extract_location_data(item):
 
     return data
 
-def scrape_bing_maps(query, cp=None, lvl=None):
+def scrape_bing_maps(query, map_bounds=None):
     """
-    Scrape Bing Maps using Center Point (cp) and Zoom Level (lvl).
-    Link Format: .../search?q=...&cp=Lat~Lon&lvl=13.1
+    Scrape Bing Maps using Map Bounds (mb).
+    Format: NorthLat~WestLon~SouthLat~EastLon
     """
     results = []
     
@@ -86,7 +86,10 @@ def scrape_bing_maps(query, cp=None, lvl=None):
 
     try:
         logger.info(f"Starting Bing Maps scrape for: {query}")
-        logger.info(f"Using Center Point: {cp}, Zoom: {lvl}")
+        if map_bounds:
+            logger.info(f"Using Map Bounds: {map_bounds}")
+        else:
+            logger.info("No Map Bounds provided (Worldwide search).")
 
         with sync_playwright() as p:
             browser = p.chromium.launch(
@@ -100,18 +103,14 @@ def scrape_bing_maps(query, cp=None, lvl=None):
             # --- DYNAMIC URL CONSTRUCTION ---
             formatted_query = quote_plus(query)
             
-            params = [f"q={formatted_query}"]
+            params = [
+                f"q={formatted_query}", 
+                "style=r"
+            ]
             
-            # Add Center Point (cp) if provided (Format: Lat~Lon)
-            if cp:
-                params.append(f"cp={cp}")
-            
-            # Add Zoom Level (lvl) if provided
-            if lvl:
-                params.append(f"lvl={lvl}")
-
-            # Standard params for List View
-            params.append("style=r")
+            # Add Map Bounds (mb) if provided
+            if map_bounds:
+                params.append(f"mb={map_bounds}")
             
             full_url = f"{BASE_URL}?{'&'.join(params)}"
             logger.info(f"Navigating to: {full_url}")
@@ -198,12 +197,9 @@ def scrape_bing_maps(query, cp=None, lvl=None):
 
 if __name__ == "__main__":
     # Argument 1: Query
-    # Argument 2: Center Point (Lat~Lon) e.g., "34.005759~-6.825282"
-    # Argument 3: Zoom Level e.g., "13.1"
+    # Argument 2: Map Bounds (North~West~South~East) e.g., "34.005759~-6.825282~33.805086~-6.536391"
     query_arg = sys.argv[1] if len(sys.argv) > 1 else "restaurant"
-    cp_arg = sys.argv[2] if len(sys.argv) > 2 else None
-    lvl_arg = sys.argv[3] if len(sys.argv) > 3 else None
+    bounds_arg = sys.argv[2] if len(sys.argv) > 2 else None
     
-    logger.info(f"Received query: {query_arg}")
-    scrape_bing_maps(query_arg, cp_arg, lvl_arg)
+    scrape_bing_maps(query_arg, bounds_arg)
     logger.info("Job finished.")
