@@ -214,7 +214,7 @@
         // ================= FORM SUBMIT =================
         form.addEventListener('submit', async function(event) {
             event.preventDefault(); 
-            const text = input.value;
+            const text = input.value + "&cp="  + mapBoundsInput.value;
             const bounds = mapBoundsInput.value;
             
             if (!text) return;
@@ -225,7 +225,7 @@
 
             try {
                 // Construct URL with params
-                const url = `/api/run-workflow?api=${encodeURIComponent(text)}&map_bounds=${encodeURIComponent(bounds)}`;
+                const url = `/api/run-workflow?api=${encodeURIComponent(text)}`;
                 
                 const response = await fetch(url);
                 const data = await response.json();
