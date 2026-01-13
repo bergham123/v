@@ -35,17 +35,14 @@ def extract_location_data(item):
         "longitude": None
     }
 
-    # 1. Name
     name_tag = item.select_one("h3.l_magTitle")
     if name_tag:
         data["name"] = name_tag.get_text(strip=True)
 
-    # 2. Phone
     phone_tag = item.select_one("span.longNum")
     if phone_tag:
         data["phone"] = phone_tag.get_text(strip=True)
 
-    # 3. Image
     img_tag = item.select_one("img")
     if img_tag:
         src = img_tag.get("src")
@@ -54,7 +51,6 @@ def extract_location_data(item):
                 src = "https:" + src
             data["image"] = src
 
-    # 4. Lat/Lon (Parse JSON data-entity)
     card_div = item.select_one("div.b_maglistcard")
     if card_div and card_div.has_attr("data-entity"):
         raw_json = card_div["data-entity"]
@@ -71,13 +67,32 @@ def extract_location_data(item):
 
     return data
 
-def scrape_bing_maps(query, map_bounds=None):
+def parse_combined_input(raw_input):
     """
-    Scrape Bing Maps using Map Bounds (mb).
-    Format: NorthLat~WestLon~SouthLat~EastLon
+    Splits a string like "hotel&cp=34.00~-6.00" into query and parameters.
     """
-    results = []
+    parts = raw_input.split('&')
+    query = parts[0]
+    cp = None
+    mb = None
     
+    # Loop through remaining parts to find cp or mb
+    for part in parts[1:]:
+        if part.startswith('cp='):
+            cp = part.split('=', 1)[1]
+        elif part.startswith('mb='):
+            mb = part.split('=', 1)[1]
+            
+    return query, cp, mb
+
+def scrape_bing_maps(raw_input):
+    """
+    Main scraper function accepting a combined string.
+    """
+    # 1. Parse the input to get Query, CP, and MB
+    query, cp, mb = parse_combined_input(raw_input)
+    
+    results = []
     BASE_URL = "https://www.bing.com/maps/search"
     
     headers = {
@@ -85,11 +100,9 @@ def scrape_bing_maps(query, map_bounds=None):
     }
 
     try:
-        logger.info(f"Starting Bing Maps scrape for: {query}")
-        if map_bounds:
-            logger.info(f"Using Map Bounds: {map_bounds}")
-        else:
-            logger.info("No Map Bounds provided (Worldwide search).")
+        logger.info(f"Parsed Query: {query}")
+        if cp: logger.info(f"Using CP: {cp}")
+        if mb: logger.info(f"Using MB: {mb}")
 
         with sync_playwright() as p:
             browser = p.chromium.launch(
@@ -100,24 +113,21 @@ def scrape_bing_maps(query, map_bounds=None):
             page.set_extra_http_headers(headers)
             page.set_default_timeout(60000)
 
-            # --- DYNAMIC URL CONSTRUCTION ---
+            # --- URL CONSTRUCTION ---
             formatted_query = quote_plus(query)
+            params = [f"q={formatted_query}", "style=r"]
             
-            params = [
-                f"q={formatted_query}", 
-                "style=r"
-            ]
-            
-            # Add Map Bounds (mb) if provided
-            if map_bounds:
-                params.append(f"mb={map_bounds}")
+            if cp:
+                params.append(f"cp={cp}")
+            if mb:
+                params.append(f"mb={mb}")
             
             full_url = f"{BASE_URL}?{'&'.join(params)}"
             logger.info(f"Navigating to: {full_url}")
 
             page.goto(full_url, wait_until="domcontentloaded")
 
-            # --- SCROLLING LOGIC ---
+            # --- SCROLLING ---
             logger.info("Waiting for initial results...")
             try:
                 page.wait_for_selector("li.listingItem_fPE1q", state="attached", timeout=15000)
@@ -127,22 +137,19 @@ def scrape_bing_maps(query, map_bounds=None):
                     f.write(page.content())
                 return [], "no_results"
 
-            logger.info("Starting scroll to load all items...")
-            
+            logger.info("Starting scroll...")
             scroll_iterations = 0
             items_loaded_count = 0
             same_count_iterations = 0
 
             while scroll_iterations < MAX_SCROLL_ITERATIONS:
                 current_items = page.locator("li.listingItem_fPE1q").count()
-                
                 if current_items > items_loaded_count:
                     logger.info(f"Scroll {scroll_iterations}: Loaded {current_items} items.")
                     items_loaded_count = current_items
                     same_count_iterations = 0
                 else:
                     same_count_iterations += 1
-                    logger.info(f"Scroll {scroll_iterations}: No new items (Total: {current_items}).")
                 
                 if same_count_iterations >= 3:
                     logger.info("Reached end of results.")
@@ -152,26 +159,22 @@ def scrape_bing_maps(query, map_bounds=None):
                     page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
                 except:
                     pass
-
                 time.sleep(2) 
                 scroll_iterations += 1
 
             # --- PARSING ---
             logger.info("Parsing HTML...")
             html_content = page.content()
-            
             debug_filename = os.path.join(DEBUG_DIR, "bing_maps_final.html")
             with open(debug_filename, "w", encoding="utf-8") as f:
                 f.write(html_content)
 
             soup = BeautifulSoup(html_content, "html.parser")
             items = soup.select("li.listingItem_fPE1q")
-
             logger.info(f"Found {len(items)} items to process.")
 
             for item in items:
                 entry = extract_location_data(item)
-                
                 if entry["name"] and entry["phone"]:
                     if entry not in results:
                         results.append(entry)
@@ -180,13 +183,12 @@ def scrape_bing_maps(query, map_bounds=None):
             browser.close()
 
     except Exception as e:
-        logger.exception("Critical Error during scraping")
+        logger.exception("Critical Error")
     
     # Save JSON
     safe_name = re.sub(r'[^a-z0-9\-]+', '-', query.lower())
     now = datetime.now().strftime("%Y-%m-%d-%H-%M")
     filename = f"{safe_name}-maps-{now}.json"
-    
     filepath = os.path.join(DATA_DIR, filename)
     
     logger.info(f"Saving {len(results)} results to {filepath}")
@@ -196,10 +198,7 @@ def scrape_bing_maps(query, map_bounds=None):
     return results, filename
 
 if __name__ == "__main__":
-    # Argument 1: Query
-    # Argument 2: Map Bounds (North~West~South~East) e.g., "34.005759~-6.825282~33.805086~-6.536391"
+    # Only takes one argument now
     query_arg = sys.argv[1] if len(sys.argv) > 1 else "restaurant"
-    bounds_arg = sys.argv[2] if len(sys.argv) > 2 else None
-    
-    scrape_bing_maps(query_arg, bounds_arg)
+    scrape_bing_maps(query_arg)
     logger.info("Job finished.")
