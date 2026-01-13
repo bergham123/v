@@ -6,15 +6,59 @@
     <title>Search Results</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
     <!-- Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         .card-enter { animation: fadeIn 0.3s ease-in; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         
-        /* Custom Scrollbar for Sidebar */
+        /* Sidebar Scrollbar */
         #fileList::-webkit-scrollbar { width: 6px; }
         #fileList::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 4px; }
+
+        /* Custom Map Popup Styling */
+        .leaflet-popup-content-wrapper {
+            border-radius: 12px;
+            padding: 0;
+            overflow: hidden;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+        }
+        .leaflet-popup-content {
+            margin: 0;
+            width: 220px !important;
+            text-align: center;
+        }
+        .popup-img {
+            width: 100%;
+            height: 120px;
+            object-fit: cover;
+            border-bottom: 3px solid #3b82f6;
+        }
+        .popup-body {
+            padding: 12px;
+        }
+        .popup-name {
+            font-weight: 800;
+            color: #1f2937;
+            display: block;
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+        .popup-phone {
+            color: #2563eb;
+            text-decoration: none;
+            font-size: 14px;
+            display: block;
+            padding: 4px 8px;
+            background: #eff6ff;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+        .popup-phone:hover {
+            background: #dbeafe;
+        }
     </style>
 </head>
 <body class="bg-gray-100 h-screen flex overflow-hidden">
@@ -29,7 +73,6 @@
         </div>
         
         <div class="flex-1 overflow-y-auto p-3" id="fileList">
-            <!-- Files will be injected here -->
             <div class="flex items-center justify-center h-24 text-gray-400">
                 <i class="fa-solid fa-circle-notch fa-spin mr-2"></i> Loading files...
             </div>
@@ -46,7 +89,7 @@
     <div class="flex-1 flex flex-col h-full overflow-hidden relative">
         
         <!-- Header -->
-        <div class="bg-white p-4 border-b border-gray-200 flex justify-between items-center shadow-sm z-10">
+        <div class="bg-white p-4 border-b border-gray-200 flex justify-between items-center shadow-sm z-30">
             <div class="flex items-center">
                 <i class="fa-solid fa-file-lines text-gray-400 mr-3 text-xl"></i>
                 <div id="currentFileName" class="text-lg font-semibold text-gray-700 truncate max-w-md">
@@ -54,24 +97,42 @@
                 </div>
             </div>
             
-            <div class="flex space-x-2 bg-gray-100 p-1 rounded-lg">
-                <button onclick="setView('grid')" id="btnGrid" class="p-2 px-3 rounded-md hover:bg-white hover:shadow-sm transition text-blue-600 bg-white shadow-sm" title="Grid View">
-                    <i class="fa-solid fa-border-all"></i>
+            <!-- Header Actions -->
+            <div class="flex items-center space-x-3">
+                
+                <!-- View Toggles -->
+                <div class="flex space-x-1 bg-gray-100 p-1 rounded-lg">
+                    <button onclick="setView('grid')" id="btnGrid" class="p-2 px-3 rounded-md hover:bg-white hover:shadow-sm transition text-gray-500" title="Grid View">
+                        <i class="fa-solid fa-border-all"></i>
+                    </button>
+                    <button onclick="setView('list')" id="btnList" class="p-2 px-3 rounded-md hover:bg-white hover:shadow-sm transition text-gray-500" title="List View">
+                        <i class="fa-solid fa-list"></i>
+                    </button>
+                    <div class="w-px bg-gray-300 mx-1 my-1"></div>
+                    <button onclick="setView('map')" id="btnMap" class="p-2 px-3 rounded-md hover:bg-white hover:shadow-sm transition text-gray-500" title="Map View">
+                        <i class="fa-solid fa-map-location-dot"></i>
+                    </button>
+                </div>
+
+                <!-- Export Button -->
+                <button onclick="exportCleanedPhones()" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition shadow-sm font-medium text-sm flex items-center" title="Download Cleaned JSON">
+                    <i class="fa-solid fa-download mr-2"></i> Export
                 </button>
-                <button onclick="setView('list')" id="btnList" class="p-2 px-3 rounded-md hover:bg-white hover:shadow-sm transition text-gray-500" title="List View">
-                    <i class="fa-solid fa-list"></i>
-                </button>
+
             </div>
         </div>
 
         <!-- Results Area -->
-        <div class="flex-1 overflow-y-auto p-8 bg-gray-50" id="resultsArea">
+        <div class="flex-1 relative overflow-hidden bg-gray-50" id="resultsArea">
             <div class="flex flex-col items-center justify-center h-full text-gray-400 opacity-60">
                 <i class="fa-regular fa-folder-open text-6xl mb-6"></i>
                 <p class="text-lg">Select a search from the sidebar to view results</p>
             </div>
         </div>
     </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 
     <script>
         // --- CONFIGURATION ---
@@ -85,107 +146,216 @@
         const currentFileName = document.getElementById('currentFileName');
         const btnGrid = document.getElementById('btnGrid');
         const btnList = document.getElementById('btnList');
+        const btnMap = document.getElementById('btnMap');
         const rateLimitNotice = document.getElementById('rateLimitNotice');
 
-        let currentView = 'grid'; // 'grid' or 'list'
-        let currentData = []; // Store data locally for view switching
+        let currentView = 'grid'; 
+        let currentData = [];
+        
+        // Map Variables
+        let map = null;
+        let markersLayer = null;
 
-        // Check for Token (to increase API rate limit)
+        // Check for Token
         const urlParams = new URLSearchParams(window.location.search);
         const TOKEN = urlParams.get('token');
 
-        // 1. Load File List from GitHub API
-        async function loadFiles() {
-            let apiUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/data?ref=${BRANCH}`;
-            let headers = {};
-            
-            if (TOKEN) {
-                headers['Authorization'] = `token ${TOKEN}`;
+        // --- EXPORT FUNCTION ---
+        function exportCleanedPhones() {
+            if (!currentData || currentData.length === 0) {
+                alert("No data loaded to export. Please select a file first.");
+                return;
             }
 
             try {
-                const res = await fetch(apiUrl, { headers: headers });
+                // 1. Extract, Clean, and Convert to Numbers
+                const cleanNumbers = currentData
+                    .map(item => item.phone)         // Get phone strings
+                    .filter(phone => phone)           // Remove null/undefined
+                    .map(phone => phone.replace(/[^0-9]/g, '')) // Keep only digits
+                    .filter(numStr => numStr.length > 0) // Remove empty strings
+                    .map(numStr => Number(numStr));  // Convert to Number type (e.g. 212642... instead of "212642...")
+
+                if (cleanNumbers.length === 0) {
+                    alert("No valid phone numbers found in this dataset.");
+                    return;
+                }
+
+                // 2. Format as JSON
+                const jsonContent = JSON.stringify(cleanNumbers, null, 2);
+
+                // 3. Trigger Download
+                const blob = new Blob([jsonContent], { type: "application/json" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
                 
-                // Handle Rate Limits
+                // Create filename based on current file name or default
+                const filenameBase = currentFileName.innerText.includes("Select") ? "export" : currentFileName.innerText.replace(".json", "");
+                a.download = `${filenameBase}-cleaned-${Date.now()}.json`;
+                
+                document.body.appendChild(a);
+                a.click();
+                
+                // Cleanup
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+
+            } catch (error) {
+                console.error("Export error:", error);
+                alert("An error occurred while exporting data.");
+            }
+        }
+
+        // --- VIEW CONTROLLER ---
+        function setView(view) {
+            currentView = view;
+            
+            // Reset Button Styles
+            const activeClass = "bg-white shadow-sm text-blue-600";
+            const inactiveClass = "text-gray-500 hover:bg-white hover:shadow-sm";
+            
+            [btnGrid, btnList, btnMap].forEach(btn => {
+                btn.className = `p-2 px-3 rounded-md transition ${inactiveClass}`;
+            });
+
+            // Set Active Style
+            if (view === 'grid') btnGrid.className = `p-2 px-3 rounded-md transition ${activeClass}`;
+            if (view === 'list') btnList.className = `p-2 px-3 rounded-md transition ${activeClass}`;
+            if (view === 'map') btnMap.className = `p-2 px-3 rounded-md transition ${activeClass}`;
+
+            if (view === 'map') {
+                if (!map) initMap(); 
+                setTimeout(() => { if(map) map.invalidateSize(); }, 100);
+            }
+
+            if (currentData.length > 0) {
+                renderResults(currentData);
+            }
+        }
+
+        // --- MAP LOGIC ---
+        function initMap() {
+            const mapDiv = document.createElement('div');
+            mapDiv.id = 'mapContainer';
+            mapDiv.style.width = '100%';
+            mapDiv.style.height = '100%';
+            mapDiv.style.zIndex = '0';
+            resultsArea.innerHTML = '';
+            resultsArea.appendChild(mapDiv);
+
+            map = L.map('mapContainer').setView([33.5731, -7.5898], 6);
+
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; OpenStreetMap contributors'
+            }).addTo(map);
+
+            markersLayer = L.layerGroup().addTo(map);
+        }
+
+        function updateMapMarkers(data) {
+            if (!map) return;
+            markersLayer.clearLayers();
+            let bounds = [];
+
+            data.forEach(item => {
+                if (item.latitude && item.longitude) {
+                    const lat = parseFloat(item.latitude);
+                    const lng = parseFloat(item.longitude);
+
+                    if (!isNaN(lat) && !isNaN(lng)) {
+                        const fallbackImg = `https://ui-avatars.com/api/?name=${encodeURIComponent(item.name || 'N')}&background=random&size=200`;
+                        const imgUrl = item.image || fallbackImg;
+
+                        const popupContent = `
+                            <div class="popup-wrapper">
+                                <img src="${imgUrl}" class="popup-img" alt="${item.name}">
+                                <div class="popup-body">
+                                    <span class="popup-name">${item.name}</span>
+                                    <a href="tel:${item.phone}" class="popup-phone">
+                                        <i class="fa-solid fa-phone mr-1"></i> ${item.phone}
+                                    </a>
+                                </div>
+                            </div>
+                        `;
+
+                        const marker = L.marker([lat, lng])
+                            .bindPopup(popupContent, { maxWidth: 250, className: 'custom-popup' });
+                        markersLayer.addLayer(marker);
+                        bounds.push([lat, lng]);
+                    }
+                }
+            });
+
+            if (bounds.length > 0) map.fitBounds(bounds, { padding: [50, 50] });
+        }
+
+        // --- FILE LOADING LOGIC ---
+        async function loadFiles() {
+            let apiUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/data?ref=${BRANCH}`;
+            let headers = {};
+            if (TOKEN) headers['Authorization'] = `token ${TOKEN}`;
+
+            try {
+                const res = await fetch(apiUrl, { headers: headers });
                 if (res.status === 403 && res.headers.get("X-RateLimit-Remaining") === "0") {
                     fileListEl.innerHTML = '<div class="text-red-500 text-sm p-4 text-center">API Limit Exceeded.<br>Please reload with token.</div>';
                     rateLimitNotice.classList.remove('hidden');
                     return;
                 }
-                
                 if (!res.ok) throw new Error(`GitHub API Error: ${res.status}`);
 
                 const files = await res.json();
-                
-                // Filter and Sort
-                // We only want .json files
                 const jsonFiles = files.filter(f => f.type === 'file' && f.name.endsWith('.json'));
-                
-                // Sort by name descending (since name contains date, this puts newest first)
                 jsonFiles.sort((a, b) => b.name.localeCompare(a.name));
-
                 renderFileList(jsonFiles);
-
             } catch (err) {
-                console.error(err);
                 fileListEl.innerHTML = `<div class="text-red-500 text-sm p-4 text-center">Error loading files.<br>${err.message}</div>`;
             }
         }
 
         function renderFileList(files) {
             fileListEl.innerHTML = '';
-            
             if (files.length === 0) {
-                fileListEl.innerHTML = '<div class="text-gray-500 text-sm p-4 text-center italic">No saved searches found in /data folder.</div>';
+                fileListEl.innerHTML = '<div class="text-gray-500 text-sm p-4 text-center italic">No saved searches found.</div>';
                 return;
             }
-
             files.forEach(file => {
                 const btn = document.createElement('div');
                 btn.className = 'group flex items-center p-3 mb-2 bg-white border border-gray-200 rounded-lg cursor-pointer hover:border-blue-400 hover:shadow-md transition select-none';
-                
-                // Format filename (remove .json)
-                const cleanName = file.name.replace('.json', '');
-
                 btn.innerHTML = `
                     <div class="w-8 h-8 rounded-full bg-blue-50 text-blue-500 flex items-center justify-center mr-3 group-hover:bg-blue-500 group-hover:text-white transition">
                         <i class="fa-solid fa-file-code text-xs"></i>
                     </div>
                     <div class="flex-1 overflow-hidden">
-                        <div class="text-sm font-semibold text-gray-700 truncate group-hover:text-blue-600">${cleanName}</div>
+                        <div class="text-sm font-semibold text-gray-700 truncate group-hover:text-blue-600">${file.name.replace('.json', '')}</div>
                         <div class="text-xs text-gray-400">JSON Data</div>
                     </div>
                     <i class="fa-solid fa-chevron-right text-gray-300 text-xs group-hover:text-blue-400"></i>
                 `;
-                
                 btn.onclick = () => loadResults(file.name);
                 fileListEl.appendChild(btn);
             });
         }
 
-        // 2. Load Specific Results from Raw GitHub
         async function loadResults(filename) {
             currentFileName.innerText = filename;
             resultsArea.innerHTML = `
                 <div class="flex flex-col items-center justify-center h-full">
                     <i class="fa-solid fa-circle-notch fa-spin text-4xl text-blue-500 mb-4"></i>
-                    <p class="text-gray-500 animate-pulse">Loading results for ${filename}...</p>
+                    <p class="text-gray-500 animate-pulse">Loading results...</p>
                 </div>`;
 
-            // Use Raw URL (fastest for reading file content)
             const rawUrl = `https://raw.githubusercontent.com/${OWNER}/${REPO}/${BRANCH}/data/${filename}`;
 
             try {
                 const res = await fetch(rawUrl);
                 if (!res.ok) throw new Error("File not found or unreadable");
-                
                 const data = await res.json();
-                currentData = data; // Save for view switching
+                currentData = data;
 
-                if (!Array.isArray(data)) throw new Error("Data format is incorrect (expected Array)");
-
+                if (!Array.isArray(data)) throw new Error("Data format is incorrect");
                 renderResults(data);
-
             } catch (err) {
                 resultsArea.innerHTML = `
                     <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded max-w-lg mx-auto mt-10">
@@ -196,11 +366,21 @@
             }
         }
 
-        // 3. Render Data
         function renderResults(data) {
+            if (currentView === 'map') {
+                if (!map) initMap();
+                else {
+                    resultsArea.innerHTML = '';
+                    const mapDiv = document.getElementById('mapContainer');
+                    if(!mapDiv) resultsArea.appendChild(map.parentElement || map.getContainer());
+                    else resultsArea.appendChild(mapDiv);
+                    setTimeout(() => map.invalidateSize(), 100);
+                }
+                updateMapMarkers(data);
+                return;
+            }
+
             resultsArea.innerHTML = '';
-            
-            // Container Class based on view
             const containerClass = currentView === 'grid' 
                 ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6' 
                 : 'flex flex-col gap-3 max-w-5xl mx-auto';
@@ -209,26 +389,16 @@
             container.className = containerClass;
 
             if (data.length === 0) {
-                resultsArea.innerHTML = `
-                    <div class="text-center mt-10">
-                        <div class="inline-block p-4 rounded-full bg-gray-200 text-gray-500 mb-3">
-                            <i class="fa-solid fa-inbox text-2xl"></i>
-                        </div>
-                        <p class="text-gray-500">No results found in this file.</p>
-                    </div>`;
+                resultsArea.innerHTML = `<div class="text-center mt-10 text-gray-500">No results found.</div>`;
                 return;
             }
 
             data.forEach((item, index) => {
                 const card = document.createElement('div');
-                // Add staggered animation delay
                 card.style.animationDelay = `${index * 0.05}s`;
                 card.className = 'bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-lg transition duration-300 overflow-hidden card-enter relative group';
-
-                // Fallback image generator
                 const imgUrl = item.image || `https://ui-avatars.com/api/?name=${encodeURIComponent(item.name || 'Unknown')}&background=0D8ABC&color=fff&size=128`;
                 
-                // Layout changes based on view
                 if (currentView === 'grid') {
                     card.innerHTML = `
                         <div class="h-32 bg-gray-100 overflow-hidden relative">
@@ -236,24 +406,14 @@
                         </div>
                         <div class="p-4">
                             <h3 class="font-bold text-gray-800 mb-1 line-clamp-1" title="${item.name}">${item.name}</h3>
-                            <div class="flex items-center mb-3">
-                                <div class="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
-                                    <div class="h-full bg-blue-500 w-2/3"></div> <!-- Decorative bar -->
-                                </div>
-                            </div>
-                            <p class="text-blue-600 font-mono font-semibold text-sm bg-blue-50 inline-block px-2 py-1 rounded border border-blue-100">${item.phone}</p>
-                            <div class="mt-4 flex gap-2">
-                                <a href="tel:${item.phone}" class="flex-1 bg-gray-800 text-white py-2 rounded text-center text-xs font-bold hover:bg-black transition">
-                                    <i class="fa-solid fa-phone mr-1"></i> Call
-                                </a>
-                                <a href="https://www.google.com/maps/search/?api=1&query=${item.latitude},${item.longitude}" target="_blank" class="flex-1 bg-white border border-gray-300 text-gray-700 py-2 rounded text-center text-xs font-bold hover:bg-gray-50 transition">
-                                    <i class="fa-solid fa-location-dot mr-1"></i> Map
-                                </a>
+                            <p class="text-blue-600 font-mono font-semibold text-sm bg-blue-50 inline-block px-2 py-1 rounded border border-blue-100 mb-3">${item.phone}</p>
+                            <div class="flex gap-2">
+                                <a href="tel:${item.phone}" class="flex-1 bg-gray-800 text-white py-2 rounded text-center text-xs font-bold hover:bg-black transition"><i class="fa-solid fa-phone mr-1"></i> Call</a>
+                                <a href="https://www.google.com/maps/search/?api=1&query=${item.latitude},${item.longitude}" target="_blank" class="flex-1 bg-white border border-gray-300 text-gray-700 py-2 rounded text-center text-xs font-bold hover:bg-gray-50 transition"><i class="fa-solid fa-location-dot mr-1"></i> Map</a>
                             </div>
                         </div>
                     `;
                 } else {
-                    // List View
                     card.innerHTML = `
                         <div class="flex items-center p-3">
                             <img src="${imgUrl}" alt="${item.name}" class="w-14 h-14 rounded-lg object-cover border border-gray-200 shadow-sm">
@@ -265,46 +425,18 @@
                                 <div class="font-mono text-blue-600 font-bold text-sm">${item.phone}</div>
                             </div>
                             <div class="flex gap-2">
-                                <a href="tel:${item.phone}" class="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center hover:bg-blue-500 hover:text-white transition">
-                                    <i class="fa-solid fa-phone text-xs"></i>
-                                </a>
-                                <a href="https://www.google.com/maps/search/?api=1&query=${item.latitude},${item.longitude}" target="_blank" class="w-8 h-8 rounded-full bg-gray-50 text-gray-600 flex items-center justify-center hover:bg-gray-200 transition">
-                                    <i class="fa-solid fa-location-dot text-xs"></i>
-                                </a>
+                                <a href="tel:${item.phone}" class="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center hover:bg-blue-500 hover:text-white transition"><i class="fa-solid fa-phone text-xs"></i></a>
+                                <a href="https://www.google.com/maps/search/?api=1&query=${item.latitude},${item.longitude}" target="_blank" class="w-8 h-8 rounded-full bg-gray-50 text-gray-600 flex items-center justify-center hover:bg-gray-200 transition"><i class="fa-solid fa-location-dot text-xs"></i></a>
                             </div>
                         </div>
                     `;
                 }
-
                 container.appendChild(card);
             });
 
             resultsArea.appendChild(container);
         }
 
-        // 4. Toggle View
-        function setView(view) {
-            currentView = view;
-            
-            // Update Button Styles
-            const activeClass = "bg-white shadow-sm text-blue-600";
-            const inactiveClass = "text-gray-500 hover:bg-white hover:shadow-sm";
-
-            if (view === 'grid') {
-                btnGrid.className = `p-2 px-3 rounded-md transition ${activeClass}`;
-                btnList.className = `p-2 px-3 rounded-md transition ${inactiveClass}`;
-            } else {
-                btnList.className = `p-2 px-3 rounded-md transition ${activeClass}`;
-                btnGrid.className = `p-2 px-3 rounded-md transition ${inactiveClass}`;
-            }
-
-            // Re-render if data is loaded
-            if (currentData.length > 0) {
-                renderResults(currentData);
-            }
-        }
-
-        // Init
         window.onload = loadFiles;
     </script>
 </body>
