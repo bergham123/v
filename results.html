@@ -59,6 +59,15 @@
         .popup-phone:hover {
             background: #dbeafe;
         }
+
+        /* Progress Bar Animation */
+        @keyframes loadProgress {
+            0% { width: 0%; }
+            100% { width: 100%; }
+        }
+        .progress-bar-animate {
+            animation: loadProgress 120s linear forwards; /* 2 Minutes */
+        }
     </style>
 </head>
 <body class="bg-gray-100 h-screen flex overflow-hidden">
@@ -99,31 +108,23 @@
             
             <!-- Header Actions -->
             <div class="flex items-center space-x-3">
-                
                 <!-- View Toggles -->
                 <div class="flex space-x-1 bg-gray-100 p-1 rounded-lg">
-                    <button onclick="setView('grid')" id="btnGrid" class="p-2 px-3 rounded-md hover:bg-white hover:shadow-sm transition text-gray-500" title="Grid View">
-                        <i class="fa-solid fa-border-all"></i>
-                    </button>
-                    <button onclick="setView('list')" id="btnList" class="p-2 px-3 rounded-md hover:bg-white hover:shadow-sm transition text-gray-500" title="List View">
-                        <i class="fa-solid fa-list"></i>
-                    </button>
+                    <button onclick="setView('grid')" id="btnGrid" class="p-2 px-3 rounded-md hover:bg-white hover:shadow-sm transition text-gray-500" title="Grid View"><i class="fa-solid fa-border-all"></i></button>
+                    <button onclick="setView('list')" id="btnList" class="p-2 px-3 rounded-md hover:bg-white hover:shadow-sm transition text-gray-500" title="List View"><i class="fa-solid fa-list"></i></button>
                     <div class="w-px bg-gray-300 mx-1 my-1"></div>
-                    <button onclick="setView('map')" id="btnMap" class="p-2 px-3 rounded-md hover:bg-white hover:shadow-sm transition text-gray-500" title="Map View">
-                        <i class="fa-solid fa-map-location-dot"></i>
-                    </button>
+                    <button onclick="setView('map')" id="btnMap" class="p-2 px-3 rounded-md hover:bg-white hover:shadow-sm transition text-gray-500" title="Map View"><i class="fa-solid fa-map-location-dot"></i></button>
                 </div>
 
                 <!-- Export Button -->
                 <button onclick="exportCleanedPhones()" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition shadow-sm font-medium text-sm flex items-center" title="Download Cleaned JSON">
                     <i class="fa-solid fa-download mr-2"></i> Export
                 </button>
-
             </div>
         </div>
 
-        <!-- Results Area -->
-        <div class="flex-1 relative overflow-hidden bg-gray-50" id="resultsArea">
+        <!-- Results Area (Updated overflow-auto) -->
+        <div class="flex-1 relative overflow-auto bg-gray-50" id="resultsArea">
             <div class="flex flex-col items-center justify-center h-full text-gray-400 opacity-60">
                 <i class="fa-regular fa-folder-open text-6xl mb-6"></i>
                 <p class="text-lg">Select a search from the sidebar to view results</p>
@@ -163,63 +164,43 @@
         // --- EXPORT FUNCTION ---
         function exportCleanedPhones() {
             if (!currentData || currentData.length === 0) {
-                alert("No data loaded to export. Please select a file first.");
+                alert("No data loaded to export.");
                 return;
             }
-
             try {
-                // 1. Extract, Clean, and Convert to Numbers
                 const cleanNumbers = currentData
-                    .map(item => item.phone)         // Get phone strings
-                    .filter(phone => phone)           // Remove null/undefined
-                    .map(phone => phone.replace(/[^0-9]/g, '')) // Keep only digits
-                    .filter(numStr => numStr.length > 0) // Remove empty strings
-                    .map(numStr => Number(numStr));  // Convert to Number type (e.g. 212642... instead of "212642...")
+                    .map(item => item.phone)
+                    .filter(phone => phone)
+                    .map(phone => phone.replace(/[^0-9]/g, ''))
+                    .filter(numStr => numStr.length > 0)
+                    .map(numStr => Number(numStr));
 
                 if (cleanNumbers.length === 0) {
-                    alert("No valid phone numbers found in this dataset.");
+                    alert("No valid phone numbers found.");
                     return;
                 }
-
-                // 2. Format as JSON
                 const jsonContent = JSON.stringify(cleanNumbers, null, 2);
-
-                // 3. Trigger Download
                 const blob = new Blob([jsonContent], { type: "application/json" });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement("a");
                 a.href = url;
-                
-                // Create filename based on current file name or default
                 const filenameBase = currentFileName.innerText.includes("Select") ? "export" : currentFileName.innerText.replace(".json", "");
                 a.download = `${filenameBase}-cleaned-${Date.now()}.json`;
-                
                 document.body.appendChild(a);
                 a.click();
-                
-                // Cleanup
                 document.body.removeChild(a);
                 URL.revokeObjectURL(url);
-
             } catch (error) {
-                console.error("Export error:", error);
-                alert("An error occurred while exporting data.");
+                alert("Error exporting data.");
             }
         }
 
         // --- VIEW CONTROLLER ---
         function setView(view) {
             currentView = view;
-            
-            // Reset Button Styles
             const activeClass = "bg-white shadow-sm text-blue-600";
             const inactiveClass = "text-gray-500 hover:bg-white hover:shadow-sm";
-            
-            [btnGrid, btnList, btnMap].forEach(btn => {
-                btn.className = `p-2 px-3 rounded-md transition ${inactiveClass}`;
-            });
-
-            // Set Active Style
+            [btnGrid, btnList, btnMap].forEach(btn => btn.className = `p-2 px-3 rounded-md transition ${inactiveClass}`);
             if (view === 'grid') btnGrid.className = `p-2 px-3 rounded-md transition ${activeClass}`;
             if (view === 'list') btnList.className = `p-2 px-3 rounded-md transition ${activeClass}`;
             if (view === 'map') btnMap.className = `p-2 px-3 rounded-md transition ${activeClass}`;
@@ -228,10 +209,7 @@
                 if (!map) initMap(); 
                 setTimeout(() => { if(map) map.invalidateSize(); }, 100);
             }
-
-            if (currentData.length > 0) {
-                renderResults(currentData);
-            }
+            if (currentData.length > 0) renderResults(currentData);
         }
 
         // --- MAP LOGIC ---
@@ -243,13 +221,8 @@
             mapDiv.style.zIndex = '0';
             resultsArea.innerHTML = '';
             resultsArea.appendChild(mapDiv);
-
             map = L.map('mapContainer').setView([33.5731, -7.5898], 6);
-
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '&copy; OpenStreetMap contributors'
-            }).addTo(map);
-
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
             markersLayer = L.layerGroup().addTo(map);
         }
 
@@ -257,69 +230,128 @@
             if (!map) return;
             markersLayer.clearLayers();
             let bounds = [];
-
             data.forEach(item => {
                 if (item.latitude && item.longitude) {
                     const lat = parseFloat(item.latitude);
                     const lng = parseFloat(item.longitude);
-
                     if (!isNaN(lat) && !isNaN(lng)) {
                         const fallbackImg = `https://ui-avatars.com/api/?name=${encodeURIComponent(item.name || 'N')}&background=random&size=200`;
                         const imgUrl = item.image || fallbackImg;
-
                         const popupContent = `
                             <div class="popup-wrapper">
                                 <img src="${imgUrl}" class="popup-img" alt="${item.name}">
                                 <div class="popup-body">
                                     <span class="popup-name">${item.name}</span>
-                                    <a href="tel:${item.phone}" class="popup-phone">
-                                        <i class="fa-solid fa-phone mr-1"></i> ${item.phone}
-                                    </a>
+                                    <a href="tel:${item.phone}" class="popup-phone"><i class="fa-solid fa-phone mr-1"></i> ${item.phone}</a>
                                 </div>
-                            </div>
-                        `;
-
-                        const marker = L.marker([lat, lng])
-                            .bindPopup(popupContent, { maxWidth: 250, className: 'custom-popup' });
+                            </div>`;
+                        const marker = L.marker([lat, lng]).bindPopup(popupContent, { maxWidth: 250, className: 'custom-popup' });
                         markersLayer.addLayer(marker);
                         bounds.push([lat, lng]);
                     }
                 }
             });
-
             if (bounds.length > 0) map.fitBounds(bounds, { padding: [50, 50] });
         }
 
+        // --- POLLING & PROGRESS LOGIC ---
+        function checkPendingSearch() {
+            const pendingRaw = localStorage.getItem('waiting_for_results');
+            if (!pendingRaw) return;
+
+            const pending = JSON.parse(pendingRaw);
+            if (!pending.waiting) {
+                localStorage.removeItem('waiting_for_results');
+                return;
+            }
+
+            // Show Progress Overlay
+            showProgressOverlay();
+
+            // Start Polling for new file
+            const startTime = pending.startTime;
+            const pollInterval = setInterval(async () => {
+                // 1. Try to load files to check for new ones
+                const files = await fetchFileList();
+                if (!files) return;
+
+                // 2. Check if any file is newer than our start time
+                const newestFile = files[0]; // Assuming sorted by name (date)
+                if (newestFile) {
+                    // Extract date from filename: "query-2023-10-27-... .json"
+                    const fileDate = new Date(newestFile.name.substring(newestFile.name.indexOf('-')+1, newestFile.name.lastIndexOf('-')).replace(/-/g, '/'));
+                    
+                    // Allow a small buffer (e.g. 5 seconds) to account for clock differences
+                    if (fileDate.getTime() > (startTime - 5000)) {
+                        // FOUND IT!
+                        clearInterval(pollInterval);
+                        hideProgressOverlay();
+                        localStorage.removeItem('waiting_for_results');
+                        loadResults(newestFile.name);
+                    }
+                }
+            }, 10000); // Check every 10 seconds
+
+            // Fail safe: stop after 2 mins 10 sec
+            setTimeout(() => {
+                clearInterval(pollInterval);
+                localStorage.removeItem('waiting_for_results');
+                hideProgressOverlay();
+                alert("Waiting time expired. Please check the sidebar manually.");
+            }, 125000);
+        }
+
+        function showProgressOverlay() {
+            resultsArea.innerHTML = `
+                <div class="flex flex-col items-center justify-center h-full p-10">
+                    <div class="bg-white p-8 rounded-xl shadow-xl w-full max-w-md">
+                        <div class="text-center mb-6">
+                            <i class="fa-solid fa-robot text-5xl text-blue-500 mb-4"></i>
+                            <h2 class="text-2xl font-bold text-gray-800">Scraping in Progress</h2>
+                            <p class="text-gray-500 mt-2">Please wait while we gather data... (approx. 1-2 min)</p>
+                        </div>
+                        <div class="w-full bg-gray-200 rounded-full h-4 mb-4 overflow-hidden">
+                            <div class="bg-blue-600 h-4 rounded-full progress-bar-animate"></div>
+                        </div>
+                        <div class="text-center text-sm text-blue-600 font-medium">
+                            This window will update automatically when done.
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function hideProgressOverlay() {
+            // Results will be populated by loadResults
+        }
+
         // --- FILE LOADING LOGIC ---
-        async function loadFiles() {
+        async function fetchFileList() {
             let apiUrl = `https://api.github.com/repos/${OWNER}/${REPO}/contents/data?ref=${BRANCH}`;
             let headers = {};
             if (TOKEN) headers['Authorization'] = `token ${TOKEN}`;
-
             try {
                 const res = await fetch(apiUrl, { headers: headers });
-                if (res.status === 403 && res.headers.get("X-RateLimit-Remaining") === "0") {
-                    fileListEl.innerHTML = '<div class="text-red-500 text-sm p-4 text-center">API Limit Exceeded.<br>Please reload with token.</div>';
-                    rateLimitNotice.classList.remove('hidden');
-                    return;
-                }
-                if (!res.ok) throw new Error(`GitHub API Error: ${res.status}`);
-
+                if (!res.ok) return null;
                 const files = await res.json();
                 const jsonFiles = files.filter(f => f.type === 'file' && f.name.endsWith('.json'));
-                jsonFiles.sort((a, b) => b.name.localeCompare(a.name));
-                renderFileList(jsonFiles);
-            } catch (err) {
-                fileListEl.innerHTML = `<div class="text-red-500 text-sm p-4 text-center">Error loading files.<br>${err.message}</div>`;
+                jsonFiles.sort((a, b) => b.name.localeCompare(a.name)); // Newest first
+                return jsonFiles;
+            } catch (err) { return null; }
+        }
+
+        async function loadFiles() {
+            const files = await fetchFileList();
+            fileListEl.innerHTML = '';
+            if (!files || files.length === 0) {
+                fileListEl.innerHTML = '<div class="text-gray-500 text-sm p-4 text-center italic">No saved searches found.</div>';
+                return;
             }
+            renderFileList(files);
         }
 
         function renderFileList(files) {
             fileListEl.innerHTML = '';
-            if (files.length === 0) {
-                fileListEl.innerHTML = '<div class="text-gray-500 text-sm p-4 text-center italic">No saved searches found.</div>';
-                return;
-            }
             files.forEach(file => {
                 const btn = document.createElement('div');
                 btn.className = 'group flex items-center p-3 mb-2 bg-white border border-gray-200 rounded-lg cursor-pointer hover:border-blue-400 hover:shadow-md transition select-none';
@@ -345,24 +377,16 @@
                     <i class="fa-solid fa-circle-notch fa-spin text-4xl text-blue-500 mb-4"></i>
                     <p class="text-gray-500 animate-pulse">Loading results...</p>
                 </div>`;
-
             const rawUrl = `https://raw.githubusercontent.com/${OWNER}/${REPO}/${BRANCH}/data/${filename}`;
-
             try {
                 const res = await fetch(rawUrl);
                 if (!res.ok) throw new Error("File not found or unreadable");
                 const data = await res.json();
                 currentData = data;
-
                 if (!Array.isArray(data)) throw new Error("Data format is incorrect");
                 renderResults(data);
             } catch (err) {
-                resultsArea.innerHTML = `
-                    <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded max-w-lg mx-auto mt-10">
-                        <strong class="font-bold">Error:</strong>
-                        <span class="block sm:inline">${err.message}</span>
-                    </div>
-                `;
+                resultsArea.innerHTML = `<div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded max-w-lg mx-auto mt-10"><strong class="font-bold">Error:</strong> <span class="block sm:inline">${err.message}</span></div>`;
             }
         }
 
@@ -379,26 +403,21 @@
                 updateMapMarkers(data);
                 return;
             }
-
             resultsArea.innerHTML = '';
             const containerClass = currentView === 'grid' 
                 ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6' 
                 : 'flex flex-col gap-3 max-w-5xl mx-auto';
-
             const container = document.createElement('div');
             container.className = containerClass;
-
             if (data.length === 0) {
                 resultsArea.innerHTML = `<div class="text-center mt-10 text-gray-500">No results found.</div>`;
                 return;
             }
-
             data.forEach((item, index) => {
                 const card = document.createElement('div');
                 card.style.animationDelay = `${index * 0.05}s`;
                 card.className = 'bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-lg transition duration-300 overflow-hidden card-enter relative group';
                 const imgUrl = item.image || `https://ui-avatars.com/api/?name=${encodeURIComponent(item.name || 'Unknown')}&background=0D8ABC&color=fff&size=128`;
-                
                 if (currentView === 'grid') {
                     card.innerHTML = `
                         <div class="h-32 bg-gray-100 overflow-hidden relative">
@@ -411,8 +430,7 @@
                                 <a href="tel:${item.phone}" class="flex-1 bg-gray-800 text-white py-2 rounded text-center text-xs font-bold hover:bg-black transition"><i class="fa-solid fa-phone mr-1"></i> Call</a>
                                 <a href="https://www.google.com/maps/search/?api=1&query=${item.latitude},${item.longitude}" target="_blank" class="flex-1 bg-white border border-gray-300 text-gray-700 py-2 rounded text-center text-xs font-bold hover:bg-gray-50 transition"><i class="fa-solid fa-location-dot mr-1"></i> Map</a>
                             </div>
-                        </div>
-                    `;
+                        </div>`;
                 } else {
                     card.innerHTML = `
                         <div class="flex items-center p-3">
@@ -428,16 +446,17 @@
                                 <a href="tel:${item.phone}" class="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center hover:bg-blue-500 hover:text-white transition"><i class="fa-solid fa-phone text-xs"></i></a>
                                 <a href="https://www.google.com/maps/search/?api=1&query=${item.latitude},${item.longitude}" target="_blank" class="w-8 h-8 rounded-full bg-gray-50 text-gray-600 flex items-center justify-center hover:bg-gray-200 transition"><i class="fa-solid fa-location-dot text-xs"></i></a>
                             </div>
-                        </div>
-                    `;
+                        </div>`;
                 }
                 container.appendChild(card);
             });
-
             resultsArea.appendChild(container);
         }
 
-        window.onload = loadFiles;
+        window.onload = function() {
+            loadFiles();
+            checkPendingSearch();
+        };
     </script>
 </body>
 </html>
