@@ -51,13 +51,12 @@ jobs:
             exit 1
           fi
 
-      # ----------------- RUN PYTHON SCRIPT -----------------
+         # ----------------- RUN PYTHON SCRIPT -----------------
       - name: Run Python Scraper
         run: |
-          # Pass the inputs to the script
-          # api_param = search term
-          # map_bounds = coordinates (optional)
-          python scraper.py "${{ github.event.inputs.api_param }}" "${{ github.event.inputs.map_bounds }}"
+          # Pass api, cp (center point), and lvl (zoom)
+          python scraper.py "${{ github.event.inputs.api_param }}" "${{ github.event.inputs.cp }}" "${{ github.event.inputs.lvl }}"
+      # ----------------------------------------------------
       # ----------------------------------------------------
 
       - name: Decrement Counter
