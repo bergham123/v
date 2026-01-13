@@ -1,0 +1,51 @@
+[
+  {
+    "name": "Café mermoz méknes",
+    "phone": "+212 691-208558",
+    "image": "https://th.bing.com/th/id/OLC.anVkUaKW8EEcLA480x360?w=114&h=114&c=8&rs=1&qlt=90&cdv=1&pid=Local",
+    "latitude": 34.68891906738281,
+    "longitude": -1.9167555570602417
+  },
+  {
+    "name": "Brunch's",
+    "phone": "+212 5367-05049",
+    "image": "https://th.bing.com/th/id/OLC.MP1chd4sTWDTRg480x360?w=114&h=114&c=8&rs=1&qlt=90&cdv=1&pid=Local",
+    "latitude": 34.67498779296875,
+    "longitude": -1.912263035774231
+  },
+  {
+    "name": "Times Square CAFE",
+    "phone": "+212 5366-88986",
+    "image": "https://th.bing.com/th/id/OLC.ig7LN1NcuKLbcA480x360?w=114&h=114&c=8&rs=1&qlt=90&cdv=1&pid=Local",
+    "latitude": 34.691192626953125,
+    "longitude": -1.917834997177124
+  },
+  {
+    "name": "CAFE DENVER",
+    "phone": "+212 612-134645",
+    "image": "https://th.bing.com/th/id/OLC.NCMaFN9NmFIhDQ480x360?w=114&h=114&c=8&rs=1&qlt=90&cdv=1&pid=Local",
+    "latitude": 34.68769836425781,
+    "longitude": -1.915560007095337
+  },
+  {
+    "name": "CAFE BOUSKRI",
+    "phone": "+212 5366-80303",
+    "image": "https://th.bing.com/th/id/OLC.ASmKV6yzC6iIOw480x360?w=114&h=114&c=8&rs=1&qlt=90&cdv=1&pid=Local",
+    "latitude": 34.6583366394043,
+    "longitude": -1.8967260122299194
+  },
+  {
+    "name": "CAFE SUZA",
+    "phone": "+212 5367-46633",
+    "image": "https://th.bing.com/th?id=OLC.%2b3XFl3r4daK0wQ480x360&w=114&h=114&c=8&rs=1&qlt=90&cdv=1&pid=Local",
+    "latitude": 34.68941879272461,
+    "longitude": -1.918869972229004
+  },
+  {
+    "name": "Opheon",
+    "phone": "+212 5367-04050",
+    "image": "https://th.bing.com/th?id=OLC.gv%2fP%2bQQh9e6DZg480x360&w=114&h=114&c=8&rs=1&qlt=90&cdv=1&pid=Local",
+    "latitude": 34.66725158691406,
+    "longitude": -1.9163399934768677
+  }
+]
