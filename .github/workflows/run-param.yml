@@ -8,10 +8,11 @@ on:
   workflow_dispatch:
     inputs:
       api_param:
-        description: 'Search Query (e.g. restaurant casablanca)'
+        description: 'Search Query (e.g. hotel rabat)'
         required: true
+      # This name MUST match the parameter you send from the URL
       map_bounds:
-        description: 'Map Bounds (Format: Lat1~Lon1~Lat2~Lon2). Leave empty for worldwide search.'
+        description: 'Map Bounds (North~West~South~East)'
         required: false
         default: ''
 
@@ -51,12 +52,12 @@ jobs:
             exit 1
           fi
 
-         # ----------------- RUN PYTHON SCRIPT -----------------
+      # ----------------- RUN PYTHON SCRIPT -----------------
       - name: Run Python Scraper
         run: |
-          # Pass api, cp (center point), and lvl (zoom)
-          python scraper.py "${{ github.event.inputs.api_param }}" "${{ github.event.inputs.cp }}" "${{ github.event.inputs.lvl }}"
-      # ----------------------------------------------------
+          # Pass api_param as arg 1
+          # Pass map_bounds as arg 2
+          python scraper.py "${{ github.event.inputs.api_param }}" "${{ github.event.inputs.map_bounds }}"
       # ----------------------------------------------------
 
       - name: Decrement Counter
@@ -69,12 +70,8 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           
-          # Add the counter file
           git add counter.json
-          
-          # Add the new data folder if it exists
           git add data/
           
-          # Commit and push
           git commit -m "Update scraper results and counter [skip ci]"
           git push
