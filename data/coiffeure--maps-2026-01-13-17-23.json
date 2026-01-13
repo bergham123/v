@@ -1,0 +1,72 @@
+[
+  {
+    "name": "Salon Hollywood Officiel",
+    "phone": "+212 5225-24566",
+    "image": "https://th.bing.com/th/id/OLC.piw82XRTqWgDYA480x360?w=114&h=114&c=8&rs=1&qlt=90&cdv=1&pid=Local",
+    "latitude": 33.596458435058594,
+    "longitude": -7.615478038787842
+  },
+  {
+    "name": "Salon Wassim",
+    "phone": "+212 619-607890",
+    "image": "https://th.bing.com/th/id/OLC.a9PBLTrmRhazKA480x360?w=114&h=114&c=8&rs=1&qlt=90&cdv=1&pid=Local",
+    "latitude": 33.59617233276367,
+    "longitude": -7.62849235534668
+  },
+  {
+    "name": "Concept Coiffure",
+    "phone": "+212 5222-34376",
+    "image": "https://th.bing.com/th?id=OLC.cp4WHPRa53%2b30w480x360&w=114&h=114&c=8&rs=1&qlt=90&cdv=1&pid=Local",
+    "latitude": 33.5865592956543,
+    "longitude": -7.636874198913574
+  },
+  {
+    "name": "Espace Coiffure VIP",
+    "phone": "+212 611-338033",
+    "image": "https://r.bing.com/rp/x5cFUfAm445Z8lJcsV2pLCL1fn8.png",
+    "latitude": 33.58095169067383,
+    "longitude": -7.615864276885986
+  },
+  {
+    "name": "Barber shop tarik",
+    "phone": "+212 666-808206",
+    "image": "https://th.bing.com/th/id/OLC.9DxlGqPykaL0PQ480x360?w=114&h=114&c=8&rs=1&qlt=90&cdv=1&pid=Local",
+    "latitude": 33.53329849243164,
+    "longitude": -7.5833001136779785
+  },
+  {
+    "name": "Skandar",
+    "phone": "+212 5222-55767",
+    "image": "https://th.bing.com/th/id/OLC.6qLshd2w2GbE8w480x360?w=114&h=114&c=8&rs=1&qlt=90&cdv=1&pid=Local",
+    "latitude": 33.59649658203125,
+    "longitude": -7.6154680252075195
+  },
+  {
+    "name": "Institut NATIONAL coiffure",
+    "phone": "+212 661-330767",
+    "image": "https://th.bing.com/th/id/OLC.CuSsy6TZNeaCbQ480x360?w=114&h=114&c=8&rs=1&qlt=90&cdv=1&pid=Local",
+    "latitude": 33.56976318359375,
+    "longitude": -7.601265907287598
+  },
+  {
+    "name": "Maroc coiffure",
+    "phone": "+212 634-581747",
+    "image": "https://th.bing.com/th/id/OLC.Cb33CeH3JHGLhg480x360?w=114&h=114&c=8&rs=1&qlt=90&cdv=1&pid=Local",
+    "latitude": 33.59605026245117,
+    "longitude": -7.615819931030273
+  },
+  {
+    "name": "Salon De Coiffure Rachid",
+    "phone": "+212 680-508865",
+    "image": "https://th.bing.com/th/id/OLC.8ZfDt2WCzwJAlw480x360?w=114&h=114&c=8&rs=1&qlt=90&cdv=1&pid=Local",
+    "latitude": 33.53329849243164,
+    "longitude": -7.5833001136779785
+  },
+  {
+    "name": "Salon de Coiffure pour Hommes Casablanca Said",
+    "phone": "+212 772-869171",
+    "image": "https://th.bing.com/th/id/OLC.MyxcZBETduiKkQ480x360?w=114&h=114&c=8&rs=1&qlt=90&cdv=1&pid=Local",
+    "latitude": 33.58568572998047,
+    "longitude": -7.614931106567383
+  }
+]
