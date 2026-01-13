@@ -1,209 +1,250 @@
-import sys
-import re
-import json
-import os
-import time
-import logging
-import html
-from datetime import datetime
-from playwright.sync_api import sync_playwright
-from bs4 import BeautifulSoup
-from urllib.parse import quote_plus, urljoin
-
-# --- Configuration ---
-DATA_DIR = "data"
-os.makedirs(DATA_DIR, exist_ok=True)
-DEBUG_DIR = os.path.join(DATA_DIR, "debug_html")
-os.makedirs(DEBUG_DIR, exist_ok=True)
-
-MAX_SCROLL_ITERATIONS = 20 
-
-# Regex for phone numbers
-PHONE_REGEX = re.compile(r'(0\d[\s\-]?\d{2}[\s\-]?\d{2}[\s\-]?\d{2}[\s\-]?\d{2})')
-
-# Logging
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
-logger = logging.getLogger(__name__)
-
-def extract_location_data(item):
-    """Extracts data from a Bing Map List Item."""
-    data = {
-        "name": None,
-        "phone": None,
-        "image": None,
-        "latitude": None,
-        "longitude": None
-    }
-
-    # 1. Name
-    name_tag = item.select_one("h3.l_magTitle")
-    if name_tag:
-        data["name"] = name_tag.get_text(strip=True)
-
-    # 2. Phone
-    phone_tag = item.select_one("span.longNum")
-    if phone_tag:
-        data["phone"] = phone_tag.get_text(strip=True)
-
-    # 3. Image
-    img_tag = item.select_one("img")
-    if img_tag:
-        src = img_tag.get("src")
-        if src:
-            if src.startswith("//"):
-                src = "https:" + src
-            data["image"] = src
-
-    # 4. Lat/Lon (Parse JSON data-entity)
-    card_div = item.select_one("div.b_maglistcard")
-    if card_div and card_div.has_attr("data-entity"):
-        raw_json = card_div["data-entity"]
-        try:
-            decoded_json = html.unescape(raw_json)
-            entity_data = json.loads(decoded_json)
-            geometry = entity_data.get("geometry", {})
-            if not geometry:
-                geometry = entity_data.get("routablePoint", {})
-            data["latitude"] = geometry.get("y")
-            data["longitude"] = geometry.get("x")
-        except Exception as e:
-            logger.debug(f"Could not parse location JSON: {e}")
-
-    return data
-
-def scrape_bing_maps(query, cp=None, lvl=None):
-    """
-    Scrape Bing Maps using Center Point (cp) and Zoom Level (lvl).
-    Link Format: .../search?q=...&cp=Lat~Lon&lvl=13.1
-    """
-    results = []
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Workflow Runner</title>
     
-    BASE_URL = "https://www.bing.com/maps/search"
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
     
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    }
+    <style>
+        body { font-family: sans-serif; padding: 20px; text-align: center; background-color: #f9f9f9; }
+        
+        .container { max-width: 600px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
 
-    try:
-        logger.info(f"Starting Bing Maps scrape for: {query}")
-        logger.info(f"Using Center Point: {cp}, Zoom: {lvl}")
+        /* Counter */
+        .counter-box { margin-bottom: 20px; font-size: 18px; color: #333; }
+        .counter-number { font-size: 32px; font-weight: bold; color: #0070f3; }
 
-        with sync_playwright() as p:
-            browser = p.chromium.launch(
-                headless=True, 
-                args=['--disable-blink-features=AutomationControlled']
-            )
-            page = browser.new_page()
-            page.set_extra_http_headers(headers)
-            page.set_default_timeout(60000)
+        /* Form Elements */
+        input { 
+            padding: 10px; font-size: 16px; width: 100%; 
+            border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; margin-bottom: 10px;
+        }
+        button { 
+            padding: 10px 20px; font-size: 16px; cursor: pointer; 
+            background-color: #0070f3; color: white; border: none; border-radius: 5px; 
+            transition: background 0.2s;
+        }
+        button:hover { background-color: #0056b3; }
+        button:disabled { background-color: #ccc; cursor: not-allowed; }
+        
+        .refresh-btn { background-color: #28a745; width: 100%; margin-top: 10px; }
+        .refresh-btn:hover { background-color: #218838; }
 
-            # --- DYNAMIC URL CONSTRUCTION ---
-            formatted_query = quote_plus(query)
+        /* Map Styles */
+        #map {
+            height: 350px; /* Made taller for better selection */
+            width: 100%;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            margin-bottom: 15px;
+            z-index: 1;
+        }
+        
+        /* Map Control Buttons */
+        .map-controls {
+            margin-bottom: 15px;
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+        }
+        
+        .select-view-btn { 
+            background-color: #6c757d; /* Grey for selection button */
+            flex: 1;
+        }
+        .select-view-btn:hover { background-color: #5a6268; }
+        .select-view-btn.active { background-color: #dc3545; } /* Red when selected */
+
+        .map-status { font-size: 12px; color: #555; margin-bottom: 5px; }
+
+        /* Messages */
+        #message-area { margin-top: 10px; font-weight: bold; min-height: 24px; font-size: 14px; }
+        #debug-area { margin-top: 10px; font-size: 12px; color: #666; font-style: italic; }
+        
+        .success { color: green; }
+        .error { color: red; }
+        .loading { color: blue; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Workflow Runner</h1>
+
+        <div class="counter-box">
+            Remaining Runs: 
+            <span id="countDisplay" class="counter-number">...</span>
+        </div>
+
+        <button onclick="fetchCounter()" class="refresh-btn">🔄 Refresh Counter</button>
+
+        <hr style="margin: 20px 0; border: 0; border-top: 1px solid #eee;">
+
+        <form id="workflowForm">
+            <!-- 1. Search Text -->
+            <input type="text" id="apiParam" name="api" placeholder="Enter keyword (e.g. restaurant)..." required>
+
+            <!-- 2. Hidden Input for Bounds -->
+            <input type="hidden" id="mapBoundsInput" name="map_bounds">
+
+            <!-- 3. Map -->
+            <div class="map-status">1. Zoom to area &rarr; 2. Click button below &rarr; 3. Run</div>
+            <div id="map"></div>
             
-            params = [f"q={formatted_query}"]
+            <div class="map-controls">
+                <button type="button" id="useViewBtn" class="select-view-btn" onclick="useCurrentMapView()">
+                    📍 Use Current Map Area
+                </button>
+            </div>
+
+            <!-- 4. Submit -->
+            <button type="submit" id="runBtn" style="width: 100%; font-weight: bold; padding: 15px;">
+                Run Workflow
+            </button>
+        </form>
+
+        <div id="message-area"></div>
+        <div id="debug-area"></div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+    <script>
+        const form = document.getElementById('workflowForm');
+        const messageArea = document.getElementById('message-area');
+        const debugArea = document.getElementById('debug-area');
+        const btn = document.getElementById('runBtn');
+        const input = document.getElementById('apiParam');
+        const countDisplay = document.getElementById('countDisplay');
+        const mapBoundsInput = document.getElementById('mapBoundsInput');
+        const useViewBtn = document.getElementById('useViewBtn');
+
+        const COUNTER_URL = "/api/counter";
+
+        // ================= MAP LOGIC =================
+        let map;
+        let rect = null; // The rectangle layer
+
+        // Initialize Map
+        function initMap() {
+            // Default center: Casablanca
+            map = L.map('map').setView([33.5731, -7.5898], 11);
+
+            // Add OpenStreetMap tiles
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; OpenStreetMap contributors'
+            }).addTo(map);
+        }
+
+        initMap();
+
+        // Function to lock the current view as the selection
+        function useCurrentMapView() {
+            // Get the exact bounds of what is visible on screen
+            const bounds = map.getBounds();
             
-            # Add Center Point (cp) if provided (Format: Lat~Lon)
-            if cp:
-                params.append(f"cp={cp}")
+            // If a selection already exists, remove it
+            if (rect) {
+                map.removeLayer(rect);
+            }
+
+            // Draw a red rectangle around the screen to show what is selected
+            rect = L.rectangle(bounds, {color: "#dc3545", weight: 2, fillOpacity: 0.1}).addTo(map);
+
+            // Get Coordinates
+            // North = Top (Higher Lat), South = Bottom (Lower Lat)
+            // West = Left (Lower/Neg Lon), East = Right (Higher/Pos Lon)
+            const north = bounds.getNorth();
+            const west = bounds.getWest();
+            const south = bounds.getSouth();
+            const east = bounds.getEast();
+
+            // Format: NorthLat ~ WestLon ~ SouthLat ~ EastLon
+            // Example: 34.07~-7.07~33.80~-6.53
+            const formattedBounds = `${north}~${west}~${south}~${east}`;
             
-            # Add Zoom Level (lvl) if provided
-            if lvl:
-                params.append(f"lvl={lvl}")
-
-            # Standard params for List View
-            params.append("style=r")
+            // Save to hidden input
+            mapBoundsInput.value = formattedBounds;
             
-            full_url = f"{BASE_URL}?{'&'.join(params)}"
-            logger.info(f"Navigating to: {full_url}")
-
-            page.goto(full_url, wait_until="domcontentloaded")
-
-            # --- SCROLLING LOGIC ---
-            logger.info("Waiting for initial results...")
-            try:
-                page.wait_for_selector("li.listingItem_fPE1q", state="attached", timeout=15000)
-            except:
-                logger.warning("Timeout waiting for initial results. Saving debug HTML.")
-                with open(os.path.join(DEBUG_DIR, "initial_debug.html"), "w") as f:
-                    f.write(page.content())
-                return [], "no_results"
-
-            logger.info("Starting scroll to load all items...")
+            // UI Feedback
+            useViewBtn.classList.add('active');
+            useViewBtn.innerHTML = "✅ Area Selected";
             
-            scroll_iterations = 0
-            items_loaded_count = 0
-            same_count_iterations = 0
+            console.log("Selected Bounds:", formattedBounds);
+            alert(`Selected Area Bounds:\n${formattedBounds}`);
+        }
 
-            while scroll_iterations < MAX_SCROLL_ITERATIONS:
-                current_items = page.locator("li.listingItem_fPE1q").count()
+        // ================= COUNTER LOGIC =================
+        async function fetchCounter() {
+            debugArea.innerText = "Checking status...";
+            countDisplay.innerText = "Loading...";
+            countDisplay.style.color = "blue";
+
+            try {
+                const response = await fetch(COUNTER_URL);
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`API Error ${response.status}: ${errorText}`);
+                }
+
+                const data = await response.json();
+
+                if (data && typeof data.count === 'number') {
+                    countDisplay.innerText = data.count;
+                    debugArea.innerText = "Data loaded successfully.";
+                    if (data.count <= 0) countDisplay.style.color = "red";
+                    else countDisplay.style.color = "#0070f3";
+                } else {
+                    throw new Error("Data format wrong: 'count' missing");
+                }
+
+            } catch (error) {
+                countDisplay.innerText = "Error";
+                countDisplay.style.color = "red";
+                debugArea.innerText = error.message;
+            }
+        }
+
+        window.onload = fetchCounter;
+
+        // ================= FORM SUBMIT =================
+        form.addEventListener('submit', async function(event) {
+            event.preventDefault(); 
+            const text = input.value;
+            const bounds = mapBoundsInput.value;
+            
+            if (!text) return;
+
+            messageArea.innerText = "Sending request...";
+            messageArea.className = "loading";
+            btn.disabled = true;
+
+            try {
+                // Construct URL with params
+                const url = `/api/run-workflow?api=${encodeURIComponent(text)}&map_bounds=${encodeURIComponent(bounds)}`;
                 
-                if current_items > items_loaded_count:
-                    logger.info(f"Scroll {scroll_iterations}: Loaded {current_items} items.")
-                    items_loaded_count = current_items
-                    same_count_iterations = 0
-                else:
-                    same_count_iterations += 1
-                    logger.info(f"Scroll {scroll_iterations}: No new items (Total: {current_items}).")
-                
-                if same_count_iterations >= 3:
-                    logger.info("Reached end of results.")
-                    break
+                const response = await fetch(url);
+                const data = await response.json();
 
-                try:
-                    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                except:
-                    pass
-
-                time.sleep(2) 
-                scroll_iterations += 1
-
-            # --- PARSING ---
-            logger.info("Parsing HTML...")
-            html_content = page.content()
-            
-            debug_filename = os.path.join(DEBUG_DIR, "bing_maps_final.html")
-            with open(debug_filename, "w", encoding="utf-8") as f:
-                f.write(html_content)
-
-            soup = BeautifulSoup(html_content, "html.parser")
-            items = soup.select("li.listingItem_fPE1q")
-
-            logger.info(f"Found {len(items)} items to process.")
-
-            for item in items:
-                entry = extract_location_data(item)
-                
-                if entry["name"] and entry["phone"]:
-                    if entry not in results:
-                        results.append(entry)
-                        logger.info(f"✅ {entry['name']} | {entry['phone']}")
-
-            browser.close()
-
-    except Exception as e:
-        logger.exception("Critical Error during scraping")
-    
-    # Save JSON
-    safe_name = re.sub(r'[^a-z0-9\-]+', '-', query.lower())
-    now = datetime.now().strftime("%Y-%m-%d-%H-%M")
-    filename = f"{safe_name}-maps-{now}.json"
-    
-    filepath = os.path.join(DATA_DIR, filename)
-    
-    logger.info(f"Saving {len(results)} results to {filepath}")
-    with open(filepath, "w", encoding="utf-8") as f:
-        json.dump(results, f, ensure_ascii=False, indent=2)
-
-    return results, filename
-
-if __name__ == "__main__":
-    # Argument 1: Query
-    # Argument 2: Center Point (Lat~Lon) e.g., "34.005759~-6.825282"
-    # Argument 3: Zoom Level e.g., "13.1"
-    query_arg = sys.argv[1] if len(sys.argv) > 1 else "restaurant"
-    cp_arg = sys.argv[2] if len(sys.argv) > 2 else None
-    lvl_arg = sys.argv[3] if len(sys.argv) > 3 else None
-    
-    logger.info(f"Received query: {query_arg}")
-    scrape_bing_maps(query_arg, cp_arg, lvl_arg)
-    logger.info("Job finished.")
+                if (response.ok) {
+                    messageArea.innerText = `✅ Success: ${data.message}`;
+                    messageArea.className = "success";
+                    setTimeout(fetchCounter, 5000); 
+                } else {
+                    messageArea.innerText = `❌ Failed: ${data.error}`;
+                    messageArea.className = "error";
+                }
+            } catch (error) {
+                messageArea.innerText = `❌ Network Error`;
+                messageArea.className = "error";
+            } finally {
+                btn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>
