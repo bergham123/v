@@ -16,7 +16,7 @@ os.makedirs(DATA_DIR, exist_ok=True)
 DEBUG_DIR = os.path.join(DATA_DIR, "debug_html")
 os.makedirs(DEBUG_DIR, exist_ok=True)
 
-MAX_SCROLL_ITERATIONS = 20 # How many times to scroll down
+MAX_SCROLL_ITERATIONS = 20 
 
 # Regex for phone numbers
 PHONE_REGEX = re.compile(r'(0\d[\s\-]?\d{2}[\s\-]?\d{2}[\s\-]?\d{2}[\s\-]?\d{2})')
@@ -71,12 +71,13 @@ def extract_location_data(item):
 
     return data
 
-def scrape_bing_maps(query, map_bounds=None):
-    """Scrape Bing Maps using the specific Search URL with Bounds support."""
+def scrape_bing_maps(query, cp=None, lvl=None):
+    """
+    Scrape Bing Maps using Center Point (cp) and Zoom Level (lvl).
+    Link Format: .../search?q=...&cp=Lat~Lon&lvl=13.1
+    """
     results = []
     
-    # Base URL for Search (List View)
-    # Using the exact parameters from your link to ensure 'style=r' (List View) is active
     BASE_URL = "https://www.bing.com/maps/search"
     
     headers = {
@@ -85,8 +86,7 @@ def scrape_bing_maps(query, map_bounds=None):
 
     try:
         logger.info(f"Starting Bing Maps scrape for: {query}")
-        if map_bounds:
-            logger.info(f"Map Bounds: {map_bounds}")
+        logger.info(f"Using Center Point: {cp}, Zoom: {lvl}")
 
         with sync_playwright() as p:
             browser = p.chromium.launch(
@@ -98,36 +98,29 @@ def scrape_bing_maps(query, map_bounds=None):
             page.set_default_timeout(60000)
 
             # --- DYNAMIC URL CONSTRUCTION ---
-            # Building the URL based on your working example
             formatted_query = quote_plus(query)
             
-            # Create the query parameters string
-            params = [
-                f"q={formatted_query}",
-                "mepi=0~Embedded~Local_Magazine_List_Card_See_More",
-                "ty=17",
-                "poicount=30",
-                "usebfpr=true",
-                "v=2",
-                "sV=1",
-                "FORM=MPSRPL",
-                "style=r" # 'r' stands for Right Panel / List View
-            ]
+            params = [f"q={formatted_query}"]
             
-            # Add Map Bounds if provided
-            if map_bounds:
-                params.append(f"mb={map_bounds}")
+            # Add Center Point (cp) if provided (Format: Lat~Lon)
+            if cp:
+                params.append(f"cp={cp}")
+            
+            # Add Zoom Level (lvl) if provided
+            if lvl:
+                params.append(f"lvl={lvl}")
 
+            # Standard params for List View
+            params.append("style=r")
+            
             full_url = f"{BASE_URL}?{'&'.join(params)}"
             logger.info(f"Navigating to: {full_url}")
 
             page.goto(full_url, wait_until="domcontentloaded")
 
             # --- SCROLLING LOGIC ---
-            # Wait for the list items
             logger.info("Waiting for initial results...")
             try:
-                # The class might be dynamic, but let's try the list container or specific item class
                 page.wait_for_selector("li.listingItem_fPE1q", state="attached", timeout=15000)
             except:
                 logger.warning("Timeout waiting for initial results. Saving debug HTML.")
@@ -142,7 +135,6 @@ def scrape_bing_maps(query, map_bounds=None):
             same_count_iterations = 0
 
             while scroll_iterations < MAX_SCROLL_ITERATIONS:
-                # Count current items
                 current_items = page.locator("li.listingItem_fPE1q").count()
                 
                 if current_items > items_loaded_count:
@@ -157,7 +149,6 @@ def scrape_bing_maps(query, map_bounds=None):
                     logger.info("Reached end of results.")
                     break
 
-                # Scroll to bottom
                 try:
                     page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
                 except:
@@ -185,7 +176,7 @@ def scrape_bing_maps(query, map_bounds=None):
                 if entry["name"] and entry["phone"]:
                     if entry not in results:
                         results.append(entry)
-                        logger.info(f"✅ {entry['name']} | {entry['phone']} | ({entry['latitude']}, {entry['longitude']})")
+                        logger.info(f"✅ {entry['name']} | {entry['phone']}")
 
             browser.close()
 
@@ -206,13 +197,13 @@ def scrape_bing_maps(query, map_bounds=None):
     return results, filename
 
 if __name__ == "__main__":
-    # Argument 1: Query (e.g., "restaurant")
-    # Argument 2: Map Bounds (e.g., "34.071316~-7.078478~33.805086~-6.536391") - Optional
+    # Argument 1: Query
+    # Argument 2: Center Point (Lat~Lon) e.g., "34.005759~-6.825282"
+    # Argument 3: Zoom Level e.g., "13.1"
     query_arg = sys.argv[1] if len(sys.argv) > 1 else "restaurant"
-    bounds_arg = sys.argv[2] if len(sys.argv) > 2 else None
+    cp_arg = sys.argv[2] if len(sys.argv) > 2 else None
+    lvl_arg = sys.argv[3] if len(sys.argv) > 3 else None
     
     logger.info(f"Received query: {query_arg}")
-    logger.info(f"Received bounds: {bounds_arg}")
-    
-    scrape_bing_maps(query_arg, bounds_arg)
+    scrape_bing_maps(query_arg, cp_arg, lvl_arg)
     logger.info("Job finished.")
