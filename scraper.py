@@ -4,7 +4,7 @@ import json
 import os
 import time
 import logging
-import html  # Needed to decode the HTML entity JSON
+import html
 from datetime import datetime
 from playwright.sync_api import sync_playwright
 from bs4 import BeautifulSoup
@@ -16,9 +16,9 @@ os.makedirs(DATA_DIR, exist_ok=True)
 DEBUG_DIR = os.path.join(DATA_DIR, "debug_html")
 os.makedirs(DEBUG_DIR, exist_ok=True)
 
-MAX_PAGES = 5 # For Bing Maps, this will act as "Max Scroll Iterations"
+MAX_SCROLL_ITERATIONS = 20 # How many times to scroll down
 
-# Regex for phone numbers (Broad)
+# Regex for phone numbers
 PHONE_REGEX = re.compile(r'(0\d[\s\-]?\d{2}[\s\-]?\d{2}[\s\-]?\d{2}[\s\-]?\d{2})')
 
 # Logging
@@ -26,10 +26,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(mes
 logger = logging.getLogger(__name__)
 
 def extract_location_data(item):
-    """
-    Extracts data from a Bing Map List Item.
-    Parses the hidden 'data-entity' JSON to get Lat/Lon.
-    """
+    """Extracts data from a Bing Map List Item."""
     data = {
         "name": None,
         "phone": None,
@@ -38,65 +35,59 @@ def extract_location_data(item):
         "longitude": None
     }
 
-    # 1. Name (h3.l_magTitle)
+    # 1. Name
     name_tag = item.select_one("h3.l_magTitle")
     if name_tag:
         data["name"] = name_tag.get_text(strip=True)
 
-    # 2. Phone (span.longNum)
-    # We prioritize the HTML display over the JSON for phone, to ensure it's visible
+    # 2. Phone
     phone_tag = item.select_one("span.longNum")
     if phone_tag:
         data["phone"] = phone_tag.get_text(strip=True)
 
-    # 3. Image (img tag)
+    # 3. Image
     img_tag = item.select_one("img")
     if img_tag:
         src = img_tag.get("src")
         if src:
-            # Handle protocol relative URLs (//th.bing.com)
             if src.startswith("//"):
                 src = "https:" + src
             data["image"] = src
 
     # 4. Lat/Lon (Parse JSON data-entity)
-    # The data-entity attribute contains the full details
     card_div = item.select_one("div.b_maglistcard")
     if card_div and card_div.has_attr("data-entity"):
         raw_json = card_div["data-entity"]
         try:
-            # Decode HTML entities like &quot; -> "
             decoded_json = html.unescape(raw_json)
             entity_data = json.loads(decoded_json)
-            
-            # Get geometry
-            # In Bing JSON: x = Longitude, y = Latitude
             geometry = entity_data.get("geometry", {})
             if not geometry:
                 geometry = entity_data.get("routablePoint", {})
-            
             data["latitude"] = geometry.get("y")
             data["longitude"] = geometry.get("x")
-
         except Exception as e:
-            logger.debug(f"Could not parse location JSON for {data.get('name')}: {e}")
+            logger.debug(f"Could not parse location JSON: {e}")
 
     return data
 
-def scrape_bing_maps(query):
-    """Scrape Bing Maps using Infinite Scroll."""
+def scrape_bing_maps(query, map_bounds=None):
+    """Scrape Bing Maps using the specific Search URL with Bounds support."""
     results = []
     
-    # URL Template for Bing Maps
-    BASE_URL = "https://www.bing.com/maps?q={q}&FORM=HDRSC4"
+    # Base URL for Search (List View)
+    # Using the exact parameters from your link to ensure 'style=r' (List View) is active
+    BASE_URL = "https://www.bing.com/maps/search"
     
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
 
     try:
-        logger.info(f"Starting Bing Maps scrape for query: {query}")
-        
+        logger.info(f"Starting Bing Maps scrape for: {query}")
+        if map_bounds:
+            logger.info(f"Map Bounds: {map_bounds}")
+
         with sync_playwright() as p:
             browser = p.chromium.launch(
                 headless=True, 
@@ -106,19 +97,37 @@ def scrape_bing_maps(query):
             page.set_extra_http_headers(headers)
             page.set_default_timeout(60000)
 
+            # --- DYNAMIC URL CONSTRUCTION ---
+            # Building the URL based on your working example
             formatted_query = quote_plus(query)
-            current_url = BASE_URL.format(q=formatted_query)
             
-            logger.info(f"Navigating to: {current_url}")
-            page.goto(current_url, wait_until="domcontentloaded")
+            # Create the query parameters string
+            params = [
+                f"q={formatted_query}",
+                "mepi=0~Embedded~Local_Magazine_List_Card_See_More",
+                "ty=17",
+                "poicount=30",
+                "usebfpr=true",
+                "v=2",
+                "sV=1",
+                "FORM=MPSRPL",
+                "style=r" # 'r' stands for Right Panel / List View
+            ]
+            
+            # Add Map Bounds if provided
+            if map_bounds:
+                params.append(f"mb={map_bounds}")
+
+            full_url = f"{BASE_URL}?{'&'.join(params)}"
+            logger.info(f"Navigating to: {full_url}")
+
+            page.goto(full_url, wait_until="domcontentloaded")
 
             # --- SCROLLING LOGIC ---
-            # Bing Maps loads results in a list container. We need to scroll down 
-            # to trigger the "Load More" mechanism.
-            
-            # Wait for the list items to appear
+            # Wait for the list items
             logger.info("Waiting for initial results...")
             try:
+                # The class might be dynamic, but let's try the list container or specific item class
                 page.wait_for_selector("li.listingItem_fPE1q", state="attached", timeout=15000)
             except:
                 logger.warning("Timeout waiting for initial results. Saving debug HTML.")
@@ -128,66 +137,55 @@ def scrape_bing_maps(query):
 
             logger.info("Starting scroll to load all items...")
             
-            # Define the maximum amount of scrolling loops to prevent infinite loops
             scroll_iterations = 0
-            max_iterations = 20 # How many times to scroll down
             items_loaded_count = 0
             same_count_iterations = 0
 
-            while scroll_iterations < max_iterations:
-                # Get current number of items
+            while scroll_iterations < MAX_SCROLL_ITERATIONS:
+                # Count current items
                 current_items = page.locator("li.listingItem_fPE1q").count()
                 
                 if current_items > items_loaded_count:
-                    logger.info(f"Scroll {scroll_iterations}: Loaded {current_items} items so far.")
+                    logger.info(f"Scroll {scroll_iterations}: Loaded {current_items} items.")
                     items_loaded_count = current_items
-                    same_count_iterations = 0 # Reset counter if we found new items
+                    same_count_iterations = 0
                 else:
                     same_count_iterations += 1
-                    logger.info(f"Scroll {scroll_iterations}: No new items found (Count: {current_items}). Waiting...")
+                    logger.info(f"Scroll {scroll_iterations}: No new items (Total: {current_items}).")
                 
-                # If we scrolled 3 times and no new items appeared, we probably reached the end
                 if same_count_iterations >= 3:
-                    logger.info("Reached end of results (no new items loading).")
+                    logger.info("Reached end of results.")
                     break
 
-                # Perform the scroll
-                # Strategy: Scroll to the bottom of the page or the last item
+                # Scroll to bottom
                 try:
-                    # Scroll the window to the very bottom
                     page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
                 except:
                     pass
 
-                # Wait a bit for the items to appear
                 time.sleep(2) 
                 scroll_iterations += 1
 
-            # --- PARSING LOGIC ---
-            logger.info("Finished scrolling. Parsing HTML...")
-            html = page.content()
+            # --- PARSING ---
+            logger.info("Parsing HTML...")
+            html_content = page.content()
             
-            # Save final HTML for debugging
             debug_filename = os.path.join(DEBUG_DIR, "bing_maps_final.html")
             with open(debug_filename, "w", encoding="utf-8") as f:
-                f.write(html)
+                f.write(html_content)
 
-            soup = BeautifulSoup(html, "html.parser")
+            soup = BeautifulSoup(html_content, "html.parser")
             items = soup.select("li.listingItem_fPE1q")
 
-            logger.info(f"Found {len(items)} items in HTML.")
+            logger.info(f"Found {len(items)} items to process.")
 
             for item in items:
                 entry = extract_location_data(item)
                 
-                # Only save if we have a name and a phone
                 if entry["name"] and entry["phone"]:
                     if entry not in results:
                         results.append(entry)
-                        logger.info(f"✅ Found: {entry['name']} | {entry['phone']} | Lat: {entry['latitude']}, Lon: {entry['longitude']}")
-                elif entry["name"]:
-                    # Log items without phones just to show they exist
-                    pass 
+                        logger.info(f"✅ {entry['name']} | {entry['phone']} | ({entry['latitude']}, {entry['longitude']})")
 
             browser.close()
 
@@ -208,7 +206,13 @@ def scrape_bing_maps(query):
     return results, filename
 
 if __name__ == "__main__":
-    query_arg = sys.argv[1] if len(sys.argv) > 1 else "default query"
+    # Argument 1: Query (e.g., "restaurant")
+    # Argument 2: Map Bounds (e.g., "34.071316~-7.078478~33.805086~-6.536391") - Optional
+    query_arg = sys.argv[1] if len(sys.argv) > 1 else "restaurant"
+    bounds_arg = sys.argv[2] if len(sys.argv) > 2 else None
+    
     logger.info(f"Received query: {query_arg}")
-    scrape_bing_maps(query_arg)
+    logger.info(f"Received bounds: {bounds_arg}")
+    
+    scrape_bing_maps(query_arg, bounds_arg)
     logger.info("Job finished.")
