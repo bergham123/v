@@ -8,8 +8,12 @@ on:
   workflow_dispatch:
     inputs:
       api_param:
-        description: 'Parameter from Vercel'
+        description: 'Search Query (e.g. restaurant casablanca)'
         required: true
+      map_bounds:
+        description: 'Map Bounds (Format: Lat1~Lon1~Lat2~Lon2). Leave empty for worldwide search.'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -50,8 +54,10 @@ jobs:
       # ----------------- RUN PYTHON SCRIPT -----------------
       - name: Run Python Scraper
         run: |
-          # Pass the input parameter to the script
-          python scraper.py "${{ github.event.inputs.api_param }}"
+          # Pass the inputs to the script
+          # api_param = search term
+          # map_bounds = coordinates (optional)
+          python scraper.py "${{ github.event.inputs.api_param }}" "${{ github.event.inputs.map_bounds }}"
       # ----------------------------------------------------
 
       - name: Decrement Counter
