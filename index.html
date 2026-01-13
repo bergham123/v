@@ -214,7 +214,7 @@
         // ================= FORM SUBMIT =================
         form.addEventListener('submit', async function(event) {
             event.preventDefault(); 
-            const text = input.value + "&cp="  + mapBoundsInput.value;
+            const text = input.value + "&cp=" + mapBoundsInput.value;
             const bounds = mapBoundsInput.value;
             
             if (!text) return;
