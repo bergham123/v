@@ -7,6 +7,8 @@ import logging
 from datetime import datetime
 from playwright.sync_api import sync_playwright
 from bs4 import BeautifulSoup
+# Import quote_plus to handle URL encoding (replaces spaces with +)
+from urllib.parse import quote_plus
 
 # --- Configuration ---
 DATA_DIR = "data"
@@ -42,7 +44,13 @@ def scrape_google(query):
 
             for page_num in range(1, MAX_PAGES + 1):
                 start = (page_num - 1) * 10
-                current_url = BASE_URL.format(q=query, start=start)
+                
+                # --- FIX IS HERE ---
+                # Use quote_plus to replace spaces with '+' and encode special characters
+                formatted_query = quote_plus(query)
+                current_url = BASE_URL.format(q=formatted_query, start=start)
+                # ------------------
+
                 logger.info(f"Scraping page {page_num}/{MAX_PAGES} -> {current_url}")
 
                 page.goto(current_url)
